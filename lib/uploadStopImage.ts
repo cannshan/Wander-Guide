@@ -16,7 +16,7 @@ export async function uploadStopImage(file: File, stopId: string) {
 
   if (error) throw error;
 
-  const { data } = supabase.storage.from("tour_audio").getPublicUrl(path);
+  const { data } = supabase.storage.from("tour-audio").getPublicUrl(path);
   if (!data?.publicUrl) throw new Error("Failed to get public URL for image");
 
   return data.publicUrl;
