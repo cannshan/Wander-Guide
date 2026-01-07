@@ -7,7 +7,7 @@ export async function uploadStopImage(file: File, stopId: string) {
   const path = `stops/${stopId}/images/${crypto.randomUUID()}.${safeExt}`;
 
   const { error } = await supabase.storage
-    .from("tour_audio")
+    .from("tour-audio")
     .upload(path, file, {
       upsert: true,
       cacheControl: "3600",
