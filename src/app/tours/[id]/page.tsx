@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { uploadAudio } from "@/lib/uploadAudio";
 import { uploadStopImage } from "@/lib/uploadStopImage";
 import { deleteStopImage } from "@/lib/deleteStopImage";
-import { deleteStopAudio } from "@/lib/deleteStopAudio"; // ✅ NEW
+import { deleteStopAudio } from "@/lib/deleteStopAudio";
 
 type Tour = {
   id: string;
@@ -23,6 +23,7 @@ type Stop = {
   lat: number;
   lng: number;
   radius_m: number;
+  pass_by: boolean; // ✅ NEW
   audio_url: string | null;
   image_url: string | null;
   sort_order: number;
@@ -33,6 +34,7 @@ const blankStop = {
   lat: "",
   lng: "",
   radius_m: 75,
+  pass_by: false, // ✅ NEW
   audio_url: "",
   image_url: "",
 };
@@ -109,7 +111,9 @@ export default function TourDetailPage() {
 
     const { data: stopsData, error: stopsErr } = await supabase
       .from("stops")
-      .select("id,tour_id,title,lat,lng,radius_m,audio_url,image_url,sort_order")
+      .select(
+        "id,tour_id,title,lat,lng,radius_m,pass_by,audio_url,image_url,sort_order"
+      ) // ✅ include pass_by
       .eq("tour_id", tourId)
       .order("sort_order", { ascending: true });
 
@@ -117,7 +121,7 @@ export default function TourDetailPage() {
       setError(stopsErr.message);
       setStops([]);
     } else {
-      setStops(stopsData ?? []);
+      setStops((stopsData ?? []).map((s: any) => ({ ...s, pass_by: !!s.pass_by })));
     }
 
     setLoading(false);
@@ -205,6 +209,7 @@ export default function TourDetailPage() {
       lat,
       lng,
       radius_m: Number.isFinite(radius) ? radius : 75,
+      pass_by: !!newStop.pass_by, // ✅ NEW
       audio_url: newStop.audio_url?.trim() || null,
       image_url: newStop.image_url?.trim() || null,
       sort_order: nextSort,
@@ -224,7 +229,7 @@ export default function TourDetailPage() {
 
   const updateStopField = async (
     stopId: string,
-    patch: Partial<Pick<Stop, "title" | "lat" | "lng" | "radius_m">>
+    patch: Partial<Pick<Stop, "title" | "lat" | "lng" | "radius_m" | "pass_by">>
   ) => {
     setError(null);
 
@@ -232,6 +237,7 @@ export default function TourDetailPage() {
     if (payload.lat !== undefined) payload.lat = Number(payload.lat);
     if (payload.lng !== undefined) payload.lng = Number(payload.lng);
     if (payload.radius_m !== undefined) payload.radius_m = Number(payload.radius_m);
+    if (payload.pass_by !== undefined) payload.pass_by = !!payload.pass_by;
 
     const { error } = await supabase.from("stops").update(payload).eq("id", stopId);
 
@@ -331,6 +337,14 @@ export default function TourDetailPage() {
     try {
       await deleteStopAudio(stopId, audioUrl);
 
+      // Clear DB url (important even if storage delete fails)
+      const { error: updErr } = await supabase
+        .from("stops")
+        .update({ audio_url: null, updated_at: new Date().toISOString() })
+        .eq("id", stopId);
+
+      if (updErr) throw updErr;
+
       setStops((prev) =>
         prev.map((s) => (s.id === stopId ? { ...s, audio_url: null } : s))
       );
@@ -393,6 +407,14 @@ export default function TourDetailPage() {
 
     try {
       await deleteStopImage(stopId, imageUrl);
+
+      // Clear DB url (important even if storage delete fails)
+      const { error: updErr } = await supabase
+        .from("stops")
+        .update({ image_url: null, updated_at: new Date().toISOString() })
+        .eq("id", stopId);
+
+      if (updErr) throw updErr;
 
       setStops((prev) =>
         prev.map((s) => (s.id === stopId ? { ...s, image_url: null } : s))
@@ -577,6 +599,18 @@ export default function TourDetailPage() {
             />
           </div>
 
+          {/* ✅ Pass By */}
+          <label className="flex items-center gap-2 text-sm md:col-span-2">
+            <input
+              type="checkbox"
+              checked={!!newStop.pass_by}
+              onChange={(e) =>
+                setNewStop((s) => ({ ...s, pass_by: e.target.checked }))
+              }
+            />
+            Pass By (show in list, but mark as “Pass By”)
+          </label>
+
           {/* Stop audio */}
           <div className="border rounded-lg p-3 space-y-2 md:col-span-2">
             <div className="text-sm font-medium">Stop Audio</div>
@@ -748,6 +782,18 @@ export default function TourDetailPage() {
                   </div>
                 </div>
 
+                {/* ✅ Pass By toggle (existing stop) */}
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    defaultChecked={!!s.pass_by}
+                    onChange={(e) =>
+                      updateStopField(s.id, { pass_by: e.target.checked })
+                    }
+                  />
+                  Pass By
+                </label>
+
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-sm">
                   <div>
                     <div className="text-xs font-medium text-gray-700">Latitude</div>
@@ -884,7 +930,6 @@ export default function TourDetailPage() {
                           Preview
                         </a>
 
-                        {/* ✅ smaller delete button */}
                         <button
                           type="button"
                           className="border px-2 py-1 rounded-lg text-red-600 text-xs"
