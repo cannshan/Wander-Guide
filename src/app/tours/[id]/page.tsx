@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { uploadAudio } from "@/lib/uploadAudio";
-import { uploadStopImage } from "@/lib/uploadStopImage"; // ✅ new helper
+import { uploadStopImage } from "@/lib/uploadStopImage"; // ✅ image upload helper
+import { deleteStopImage } from "@/lib/deleteStopImage"; // ✅ NEW delete helper
 
 type Tour = {
   id: string;
@@ -22,7 +23,7 @@ type Stop = {
   lng: number;
   radius_m: number;
   audio_url: string | null;
-  image_url: string | null; // ✅ new
+  image_url: string | null; // ✅
   sort_order: number;
 };
 
@@ -32,7 +33,7 @@ const blankStop = {
   lng: "",
   radius_m: 75,
   audio_url: "",
-  image_url: "", // ✅ new
+  image_url: "", // ✅
 };
 
 export default function TourDetailPage() {
@@ -66,6 +67,11 @@ export default function TourDetailPage() {
     null
   );
   const [uploadingNewStopImage, setUploadingNewStopImage] = useState(false);
+
+  // ✅ NEW: Image delete state
+  const [deletingStopImageId, setDeletingStopImageId] = useState<string | null>(
+    null
+  );
 
   // Hidden file inputs (so we can trigger them from a button)
   const introFileRef = useRef<HTMLInputElement | null>(null);
@@ -101,7 +107,7 @@ export default function TourDetailPage() {
     // Load stops
     const { data: stopsData, error: stopsErr } = await supabase
       .from("stops")
-      .select("id,tour_id,title,lat,lng,radius_m,audio_url,image_url,sort_order") // ✅ include image_url
+      .select("id,tour_id,title,lat,lng,radius_m,audio_url,image_url,sort_order")
       .eq("tour_id", tourId)
       .order("sort_order", { ascending: true });
 
@@ -131,7 +137,6 @@ export default function TourDetailPage() {
       return;
     }
 
-    // NOTE: intro_audio_url is updated immediately on upload. We don't need a text field for it.
     const { error } = await supabase
       .from("tours")
       .update({
@@ -198,8 +203,8 @@ export default function TourDetailPage() {
       lat,
       lng,
       radius_m: Number.isFinite(radius) ? radius : 75,
-      audio_url: newStop.audio_url?.trim() || null, // set via Upload button
-      image_url: newStop.image_url?.trim() || null, // ✅ set via Upload button
+      audio_url: newStop.audio_url?.trim() || null,
+      image_url: newStop.image_url?.trim() || null,
       sort_order: nextSort,
       updated_at: new Date().toISOString(),
     });
@@ -223,7 +228,6 @@ export default function TourDetailPage() {
 
     const payload: any = { ...patch, updated_at: new Date().toISOString() };
 
-    // ensure numeric fields update correctly
     if (payload.lat !== undefined) payload.lat = Number(payload.lat);
     if (payload.lng !== undefined) payload.lng = Number(payload.lng);
     if (payload.radius_m !== undefined) payload.radius_m = Number(payload.radius_m);
@@ -260,7 +264,6 @@ export default function TourDetailPage() {
 
       if (error) throw error;
 
-      // instant UI update
       setTour((t) => (t ? { ...t, intro_audio_url: url } : t));
     } catch (e: any) {
       setError(e?.message ?? "Failed to upload intro audio.");
@@ -286,7 +289,6 @@ export default function TourDetailPage() {
 
       if (error) throw error;
 
-      // instant UI update (no full reload required)
       setStops((prev) =>
         prev.map((s) => (s.id === stopId ? { ...s, audio_url: url } : s))
       );
@@ -297,7 +299,6 @@ export default function TourDetailPage() {
     }
   };
 
-  // Upload audio for the "Add Stop" form and store URL in local state
   const uploadNewStopAudio = async (file: File) => {
     setError(null);
     setUploadingNewStop(true);
@@ -333,7 +334,6 @@ export default function TourDetailPage() {
 
       if (error) throw error;
 
-      // instant UI update
       setStops((prev) =>
         prev.map((s) => (s.id === stopId ? { ...s, image_url: imageUrl } : s))
       );
@@ -344,23 +344,43 @@ export default function TourDetailPage() {
     }
   };
 
-  // Upload image for the "Add Stop" form (we don't have a stopId yet)
-  // We'll store the image URL in local state, and it gets written when you click "Add Stop".
   const uploadNewStopImage = async (file: File) => {
     setError(null);
     setUploadingNewStopImage(true);
 
     try {
-      // Use a temporary path under the tour since stopId doesn't exist yet.
-      // This is OK for MVP. Later we can move/rename after insert if you want.
       const tempStopId = `new-stop-${crypto.randomUUID()}`;
       const imageUrl = await uploadStopImage(file, tempStopId);
-
       setNewStop((s) => ({ ...s, image_url: imageUrl }));
     } catch (e: any) {
       setError(e?.message ?? "Failed to upload new stop image.");
     } finally {
       setUploadingNewStopImage(false);
+    }
+  };
+
+  /* ============================
+     ✅ Image Delete Handler
+  ============================ */
+
+  const handleDeleteStopImage = async (stopId: string, imageUrl: string) => {
+    const ok = confirm("Delete this stop image?");
+    if (!ok) return;
+
+    setError(null);
+    setDeletingStopImageId(stopId);
+
+    try {
+      await deleteStopImage(stopId, imageUrl);
+
+      // instant UI update
+      setStops((prev) =>
+        prev.map((s) => (s.id === stopId ? { ...s, image_url: null } : s))
+      );
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to delete stop image.");
+    } finally {
+      setDeletingStopImageId(null);
     }
   };
 
@@ -408,9 +428,7 @@ export default function TourDetailPage() {
     await load();
   };
 
-  if (loading) {
-    return <div className="p-6">Loading…</div>;
-  }
+  if (loading) return <div className="p-6">Loading…</div>;
 
   if (!tour) {
     return (
@@ -440,9 +458,7 @@ export default function TourDetailPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="border rounded-xl p-3 text-red-600">{error}</div>
-      )}
+      {error && <div className="border rounded-xl p-3 text-red-600">{error}</div>}
 
       {/* Tour fields */}
       <div className="border rounded-xl p-4 space-y-3">
@@ -476,7 +492,7 @@ export default function TourDetailPage() {
           Published (visible to public app)
         </label>
 
-        {/* Intro Audio (button-only) */}
+        {/* Intro Audio */}
         <div className="border rounded-lg p-3 space-y-2">
           <div className="text-sm font-medium">Intro Audio</div>
 
@@ -537,13 +553,11 @@ export default function TourDetailPage() {
               className="border rounded-lg p-2 w-full"
               placeholder="e.g., Bar Harbor Lobster Pound"
               value={newStop.title}
-              onChange={(e) =>
-                setNewStop((s) => ({ ...s, title: e.target.value }))
-              }
+              onChange={(e) => setNewStop((s) => ({ ...s, title: e.target.value }))}
             />
           </div>
 
-          {/* Stop audio (button-only) */}
+          {/* Stop audio */}
           <div className="border rounded-lg p-3 space-y-2 md:col-span-2">
             <div className="text-sm font-medium">Stop Audio</div>
 
@@ -577,7 +591,7 @@ export default function TourDetailPage() {
             </div>
           </div>
 
-          {/* ✅ Stop image (button-only) */}
+          {/* Stop image */}
           <div className="border rounded-lg p-3 space-y-2 md:col-span-2">
             <div className="text-sm font-medium">Stop Image</div>
 
@@ -611,6 +625,15 @@ export default function TourDetailPage() {
                     alt="New stop"
                     className="h-12 w-12 rounded-lg object-cover border"
                   />
+
+                  {/* local-only remove */}
+                  <button
+                    type="button"
+                    className="border px-3 py-2 rounded-lg text-red-600"
+                    onClick={() => setNewStop((s) => ({ ...s, image_url: "" }))}
+                  >
+                    Remove
+                  </button>
                 </div>
               ) : (
                 <span className="text-sm text-gray-500">No image uploaded</span>
@@ -618,16 +641,14 @@ export default function TourDetailPage() {
             </div>
           </div>
 
-          {/* Latitude / Longitude */}
+          {/* Lat/Lng */}
           <div>
             <div className="text-xs font-medium text-gray-700">Latitude</div>
             <input
               className="border rounded-lg p-2 w-full"
               placeholder="44.3876"
               value={String(newStop.lat)}
-              onChange={(e) =>
-                setNewStop((s) => ({ ...s, lat: e.target.value }))
-              }
+              onChange={(e) => setNewStop((s) => ({ ...s, lat: e.target.value }))}
             />
           </div>
 
@@ -637,9 +658,7 @@ export default function TourDetailPage() {
               className="border rounded-lg p-2 w-full"
               placeholder="-68.2043"
               value={String(newStop.lng)}
-              onChange={(e) =>
-                setNewStop((s) => ({ ...s, lng: e.target.value }))
-              }
+              onChange={(e) => setNewStop((s) => ({ ...s, lng: e.target.value }))}
             />
           </div>
 
@@ -683,9 +702,7 @@ export default function TourDetailPage() {
                     <input
                       className="border rounded-lg p-1 ml-2"
                       defaultValue={s.title}
-                      onBlur={(e) =>
-                        updateStopField(s.id, { title: e.target.value })
-                      }
+                      onBlur={(e) => updateStopField(s.id, { title: e.target.value })}
                     />
                   </div>
 
@@ -744,14 +761,12 @@ export default function TourDetailPage() {
                       className="border rounded-lg p-1 w-full"
                       defaultValue={String(s.radius_m)}
                       onBlur={(e) =>
-                        updateStopField(s.id, {
-                          radius_m: Number(e.target.value),
-                        })
+                        updateStopField(s.id, { radius_m: Number(e.target.value) })
                       }
                     />
                   </div>
 
-                  {/* Audio upload (button-only) */}
+                  {/* Audio */}
                   <div className="md:col-span-2 space-y-2">
                     <div className="text-xs font-medium text-gray-700">Audio</div>
 
@@ -789,15 +804,13 @@ export default function TourDetailPage() {
                           Preview
                         </a>
                       ) : (
-                        <span className="text-sm text-gray-500">
-                          No file uploaded
-                        </span>
+                        <span className="text-sm text-gray-500">No file uploaded</span>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* ✅ Image upload (button-only) */}
+                {/* Image */}
                 <div className="border rounded-lg p-3 space-y-2">
                   <div className="text-sm font-medium">Stop Image</div>
 
@@ -822,9 +835,7 @@ export default function TourDetailPage() {
                       disabled={uploadingStopImageId === s.id}
                       onClick={() => stopImageRefs.current[s.id]?.click()}
                     >
-                      {uploadingStopImageId === s.id
-                        ? "Uploading…"
-                        : "Upload image"}
+                      {uploadingStopImageId === s.id ? "Uploading…" : "Upload image"}
                     </button>
 
                     {s.image_url ? (
@@ -843,11 +854,18 @@ export default function TourDetailPage() {
                         >
                           Preview
                         </a>
+
+                        <button
+                          type="button"
+                          className="border px-3 py-2 rounded-lg text-red-600"
+                          disabled={deletingStopImageId === s.id}
+                          onClick={() => handleDeleteStopImage(s.id, s.image_url!)}
+                        >
+                          {deletingStopImageId === s.id ? "Deleting…" : "Delete"}
+                        </button>
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-500">
-                        No image uploaded
-                      </span>
+                      <span className="text-sm text-gray-500">No image uploaded</span>
                     )}
                   </div>
                 </div>
