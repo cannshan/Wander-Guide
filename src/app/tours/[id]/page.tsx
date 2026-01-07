@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { uploadAudio } from "@/lib/uploadAudio";
+import { uploadStopImage } from "@/lib/uploadStopImage"; // ✅ new helper
 
 type Tour = {
   id: string;
@@ -21,6 +22,7 @@ type Stop = {
   lng: number;
   radius_m: number;
   audio_url: string | null;
+  image_url: string | null; // ✅ new
   sort_order: number;
 };
 
@@ -30,6 +32,7 @@ const blankStop = {
   lng: "",
   radius_m: 75,
   audio_url: "",
+  image_url: "", // ✅ new
 };
 
 export default function TourDetailPage() {
@@ -58,10 +61,20 @@ export default function TourDetailPage() {
   const [uploadingStopId, setUploadingStopId] = useState<string | null>(null);
   const [uploadingNewStop, setUploadingNewStop] = useState(false);
 
+  // ✅ Image upload state
+  const [uploadingStopImageId, setUploadingStopImageId] = useState<string | null>(
+    null
+  );
+  const [uploadingNewStopImage, setUploadingNewStopImage] = useState(false);
+
   // Hidden file inputs (so we can trigger them from a button)
   const introFileRef = useRef<HTMLInputElement | null>(null);
   const newStopFileRef = useRef<HTMLInputElement | null>(null);
   const stopFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // ✅ Image file inputs
+  const newStopImageRef = useRef<HTMLInputElement | null>(null);
+  const stopImageRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const load = async () => {
     setLoading(true);
@@ -88,7 +101,7 @@ export default function TourDetailPage() {
     // Load stops
     const { data: stopsData, error: stopsErr } = await supabase
       .from("stops")
-      .select("id,tour_id,title,lat,lng,radius_m,audio_url,sort_order")
+      .select("id,tour_id,title,lat,lng,radius_m,audio_url,image_url,sort_order") // ✅ include image_url
       .eq("tour_id", tourId)
       .order("sort_order", { ascending: true });
 
@@ -186,6 +199,7 @@ export default function TourDetailPage() {
       lng,
       radius_m: Number.isFinite(radius) ? radius : 75,
       audio_url: newStop.audio_url?.trim() || null, // set via Upload button
+      image_url: newStop.image_url?.trim() || null, // ✅ set via Upload button
       sort_order: nextSort,
       updated_at: new Date().toISOString(),
     });
@@ -298,6 +312,55 @@ export default function TourDetailPage() {
       setError(e?.message ?? "Failed to upload new stop audio.");
     } finally {
       setUploadingNewStop(false);
+    }
+  };
+
+  /* ============================
+     ✅ Image Upload Handlers
+  ============================ */
+
+  const uploadStopImageForExistingStop = async (stopId: string, file: File) => {
+    setError(null);
+    setUploadingStopImageId(stopId);
+
+    try {
+      const imageUrl = await uploadStopImage(file, stopId);
+
+      const { error } = await supabase
+        .from("stops")
+        .update({ image_url: imageUrl, updated_at: new Date().toISOString() })
+        .eq("id", stopId);
+
+      if (error) throw error;
+
+      // instant UI update
+      setStops((prev) =>
+        prev.map((s) => (s.id === stopId ? { ...s, image_url: imageUrl } : s))
+      );
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to upload stop image.");
+    } finally {
+      setUploadingStopImageId(null);
+    }
+  };
+
+  // Upload image for the "Add Stop" form (we don't have a stopId yet)
+  // We'll store the image URL in local state, and it gets written when you click "Add Stop".
+  const uploadNewStopImage = async (file: File) => {
+    setError(null);
+    setUploadingNewStopImage(true);
+
+    try {
+      // Use a temporary path under the tour since stopId doesn't exist yet.
+      // This is OK for MVP. Later we can move/rename after insert if you want.
+      const tempStopId = `new-stop-${crypto.randomUUID()}`;
+      const imageUrl = await uploadStopImage(file, tempStopId);
+
+      setNewStop((s) => ({ ...s, image_url: imageUrl }));
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to upload new stop image.");
+    } finally {
+      setUploadingNewStopImage(false);
     }
   };
 
@@ -514,7 +577,48 @@ export default function TourDetailPage() {
             </div>
           </div>
 
-          {/* UPDATED: removed helper text under Latitude/Longitude */}
+          {/* ✅ Stop image (button-only) */}
+          <div className="border rounded-lg p-3 space-y-2 md:col-span-2">
+            <div className="text-sm font-medium">Stop Image</div>
+
+            <input
+              ref={newStopImageRef}
+              type="file"
+              className="hidden"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadNewStopImage(file);
+                e.currentTarget.value = "";
+              }}
+            />
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="border px-4 py-2 rounded-lg"
+                disabled={uploadingNewStopImage}
+                onClick={() => newStopImageRef.current?.click()}
+              >
+                {uploadingNewStopImage ? "Uploading…" : "Upload image"}
+              </button>
+
+              {newStop.image_url ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-gray-700">Uploaded ✓</span>
+                  <img
+                    src={newStop.image_url}
+                    alt="New stop"
+                    className="h-12 w-12 rounded-lg object-cover border"
+                  />
+                </div>
+              ) : (
+                <span className="text-sm text-gray-500">No image uploaded</span>
+              )}
+            </div>
+          </div>
+
+          {/* Latitude / Longitude */}
           <div>
             <div className="text-xs font-medium text-gray-700">Latitude</div>
             <input
@@ -552,7 +656,6 @@ export default function TourDetailPage() {
               }
             />
           </div>
-
         </div>
 
         <button
@@ -573,7 +676,7 @@ export default function TourDetailPage() {
         ) : (
           <div className="space-y-3">
             {stops.map((s, i) => (
-              <div key={s.id} className="border rounded-xl p-3 space-y-2">
+              <div key={s.id} className="border rounded-xl p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="font-medium">
                     {i + 1}.{" "}
@@ -611,7 +714,6 @@ export default function TourDetailPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-sm">
-                  {/* UPDATED: removed helper text under Latitude/Longitude */}
                   <div>
                     <div className="text-xs font-medium text-gray-700">Latitude</div>
                     <input
@@ -636,9 +738,8 @@ export default function TourDetailPage() {
 
                   <div>
                     <div className="text-xs font-medium text-gray-700">
-                      Radius (meters)s
+                      Radius (meters)
                     </div>
-                    
                     <input
                       className="border rounded-lg p-1 w-full"
                       defaultValue={String(s.radius_m)}
@@ -653,7 +754,6 @@ export default function TourDetailPage() {
                   {/* Audio upload (button-only) */}
                   <div className="md:col-span-2 space-y-2">
                     <div className="text-xs font-medium text-gray-700">Audio</div>
-                    
 
                     <input
                       ref={(el) => {
@@ -694,6 +794,61 @@ export default function TourDetailPage() {
                         </span>
                       )}
                     </div>
+                  </div>
+                </div>
+
+                {/* ✅ Image upload (button-only) */}
+                <div className="border rounded-lg p-3 space-y-2">
+                  <div className="text-sm font-medium">Stop Image</div>
+
+                  <input
+                    ref={(el) => {
+                      stopImageRefs.current[s.id] = el;
+                    }}
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) uploadStopImageForExistingStop(s.id, file);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      className="border px-4 py-2 rounded-lg"
+                      disabled={uploadingStopImageId === s.id}
+                      onClick={() => stopImageRefs.current[s.id]?.click()}
+                    >
+                      {uploadingStopImageId === s.id
+                        ? "Uploading…"
+                        : "Upload image"}
+                    </button>
+
+                    {s.image_url ? (
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-gray-700">Uploaded ✓</span>
+                        <img
+                          src={s.image_url}
+                          alt={s.title}
+                          className="h-12 w-12 rounded-lg object-cover border"
+                        />
+                        <a
+                          className="text-sm underline"
+                          href={s.image_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Preview
+                        </a>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-500">
+                        No image uploaded
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
