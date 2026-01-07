@@ -4,8 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { uploadAudio } from "@/lib/uploadAudio";
-import { uploadStopImage } from "@/lib/uploadStopImage"; // ✅ image upload helper
-import { deleteStopImage } from "@/lib/deleteStopImage"; // ✅ NEW delete helper
+import { uploadStopImage } from "@/lib/uploadStopImage";
+import { deleteStopImage } from "@/lib/deleteStopImage";
+import { deleteStopAudio } from "@/lib/deleteStopAudio"; // ✅ NEW
 
 type Tour = {
   id: string;
@@ -23,7 +24,7 @@ type Stop = {
   lng: number;
   radius_m: number;
   audio_url: string | null;
-  image_url: string | null; // ✅
+  image_url: string | null;
   sort_order: number;
 };
 
@@ -33,7 +34,7 @@ const blankStop = {
   lng: "",
   radius_m: 75,
   audio_url: "",
-  image_url: "", // ✅
+  image_url: "",
 };
 
 export default function TourDetailPage() {
@@ -62,23 +63,26 @@ export default function TourDetailPage() {
   const [uploadingStopId, setUploadingStopId] = useState<string | null>(null);
   const [uploadingNewStop, setUploadingNewStop] = useState(false);
 
-  // ✅ Image upload state
+  // Image upload state
   const [uploadingStopImageId, setUploadingStopImageId] = useState<string | null>(
     null
   );
   const [uploadingNewStopImage, setUploadingNewStopImage] = useState(false);
 
-  // ✅ NEW: Image delete state
+  // Delete states
   const [deletingStopImageId, setDeletingStopImageId] = useState<string | null>(
     null
   );
+  const [deletingStopAudioId, setDeletingStopAudioId] = useState<string | null>(
+    null
+  );
 
-  // Hidden file inputs (so we can trigger them from a button)
+  // Hidden file inputs
   const introFileRef = useRef<HTMLInputElement | null>(null);
   const newStopFileRef = useRef<HTMLInputElement | null>(null);
   const stopFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // ✅ Image file inputs
+  // Image file inputs
   const newStopImageRef = useRef<HTMLInputElement | null>(null);
   const stopImageRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -86,7 +90,6 @@ export default function TourDetailPage() {
     setLoading(true);
     setError(null);
 
-    // Load tour
     const { data: tourData, error: tourErr } = await supabase
       .from("tours")
       .select("id,title,city,is_published,intro_audio_url")
@@ -104,7 +107,6 @@ export default function TourDetailPage() {
     setCity(tourData.city ?? "");
     setIsPublished(!!tourData.is_published);
 
-    // Load stops
     const { data: stopsData, error: stopsErr } = await supabase
       .from("stops")
       .select("id,tour_id,title,lat,lng,radius_m,audio_url,image_url,sort_order")
@@ -227,7 +229,6 @@ export default function TourDetailPage() {
     setError(null);
 
     const payload: any = { ...patch, updated_at: new Date().toISOString() };
-
     if (payload.lat !== undefined) payload.lat = Number(payload.lat);
     if (payload.lng !== undefined) payload.lng = Number(payload.lng);
     if (payload.radius_m !== undefined) payload.radius_m = Number(payload.radius_m);
@@ -317,7 +318,31 @@ export default function TourDetailPage() {
   };
 
   /* ============================
-     ✅ Image Upload Handlers
+     ✅ Audio Delete Handler
+  ============================ */
+
+  const handleDeleteStopAudio = async (stopId: string, audioUrl: string) => {
+    const ok = confirm("Delete this stop audio?");
+    if (!ok) return;
+
+    setError(null);
+    setDeletingStopAudioId(stopId);
+
+    try {
+      await deleteStopAudio(stopId, audioUrl);
+
+      setStops((prev) =>
+        prev.map((s) => (s.id === stopId ? { ...s, audio_url: null } : s))
+      );
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to delete stop audio.");
+    } finally {
+      setDeletingStopAudioId(null);
+    }
+  };
+
+  /* ============================
+     ✅ Image Upload + Delete
   ============================ */
 
   const uploadStopImageForExistingStop = async (stopId: string, file: File) => {
@@ -359,10 +384,6 @@ export default function TourDetailPage() {
     }
   };
 
-  /* ============================
-     ✅ Image Delete Handler
-  ============================ */
-
   const handleDeleteStopImage = async (stopId: string, imageUrl: string) => {
     const ok = confirm("Delete this stop image?");
     if (!ok) return;
@@ -373,7 +394,6 @@ export default function TourDetailPage() {
     try {
       await deleteStopImage(stopId, imageUrl);
 
-      // instant UI update
       setStops((prev) =>
         prev.map((s) => (s.id === stopId ? { ...s, image_url: null } : s))
       );
@@ -626,10 +646,9 @@ export default function TourDetailPage() {
                     className="h-12 w-12 rounded-lg object-cover border"
                   />
 
-                  {/* local-only remove */}
                   <button
                     type="button"
-                    className="border px-3 py-2 rounded-lg text-red-600"
+                    className="border px-2 py-1 rounded-lg text-red-600 text-xs"
                     onClick={() => setNewStop((s) => ({ ...s, image_url: "" }))}
                   >
                     Remove
@@ -641,7 +660,6 @@ export default function TourDetailPage() {
             </div>
           </div>
 
-          {/* Lat/Lng */}
           <div>
             <div className="text-xs font-medium text-gray-700">Latitude</div>
             <input
@@ -795,14 +813,25 @@ export default function TourDetailPage() {
                       </button>
 
                       {s.audio_url ? (
-                        <a
-                          className="text-sm underline"
-                          href={s.audio_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Preview
-                        </a>
+                        <div className="flex items-center gap-3">
+                          <a
+                            className="text-sm underline"
+                            href={s.audio_url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Preview
+                          </a>
+
+                          <button
+                            type="button"
+                            className="border px-2 py-1 rounded-lg text-red-600 text-xs"
+                            disabled={deletingStopAudioId === s.id}
+                            onClick={() => handleDeleteStopAudio(s.id, s.audio_url!)}
+                          >
+                            {deletingStopAudioId === s.id ? "Deleting…" : "Delete"}
+                          </button>
+                        </div>
                       ) : (
                         <span className="text-sm text-gray-500">No file uploaded</span>
                       )}
@@ -855,9 +884,10 @@ export default function TourDetailPage() {
                           Preview
                         </a>
 
+                        {/* ✅ smaller delete button */}
                         <button
                           type="button"
-                          className="border px-3 py-2 rounded-lg text-red-600"
+                          className="border px-2 py-1 rounded-lg text-red-600 text-xs"
                           disabled={deletingStopImageId === s.id}
                           onClick={() => handleDeleteStopImage(s.id, s.image_url!)}
                         >
@@ -873,6 +903,10 @@ export default function TourDetailPage() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="text-xs text-gray-500">
+        Tip: deletions remove the Storage file (best effort) and clear the database URL.
       </div>
     </div>
   );
