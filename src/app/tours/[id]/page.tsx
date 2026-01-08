@@ -8,12 +8,21 @@ import { uploadStopImage } from "@/lib/uploadStopImage";
 import { deleteStopImage } from "@/lib/deleteStopImage";
 import { deleteStopAudio } from "@/lib/deleteStopAudio";
 
+type Category = {
+  id: string;
+  name: string;
+};
+
 type Tour = {
   id: string;
   title: string;
   city: string | null;
   is_published: boolean;
   intro_audio_url: string | null;
+
+  // ✅ Category support
+  category_id: string | null;
+  categories?: { name: string } | null; // optional join helper
 };
 
 type Stop = {
@@ -52,6 +61,11 @@ export default function TourDetailPage() {
   const [title, setTitle] = useState("");
   const [city, setCity] = useState("");
   const [isPublished, setIsPublished] = useState(true);
+
+  // ✅ Category form state
+  const [categoryId, setCategoryId] = useState<string>("");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loadingCats, setLoadingCats] = useState(true);
 
   // Stop form state
   const [newStop, setNewStop] = useState({ ...blankStop });
@@ -92,9 +106,24 @@ export default function TourDetailPage() {
     setLoading(true);
     setError(null);
 
+    // ✅ Load categories for dropdown
+    setLoadingCats(true);
+    const { data: cats, error: catsErr } = await supabase
+      .from("categories")
+      .select("id,name")
+      .order("name", { ascending: true });
+
+    if (catsErr) {
+      setError(catsErr.message);
+      setCategories([]);
+    } else {
+      setCategories((cats as Category[]) ?? []);
+    }
+    setLoadingCats(false);
+
     const { data: tourData, error: tourErr } = await supabase
       .from("tours")
-      .select("id,title,city,is_published,intro_audio_url")
+      .select("id,title,city,is_published,intro_audio_url,category_id,categories(name)")
       .eq("id", tourId)
       .single();
 
@@ -104,10 +133,21 @@ export default function TourDetailPage() {
       return;
     }
 
-    setTour(tourData);
+    setTour({
+      id: tourData.id,
+      title: tourData.title ?? "",
+      city: tourData.city ?? null,
+      is_published: !!tourData.is_published,
+      intro_audio_url: tourData.intro_audio_url ?? null,
+      category_id: tourData.category_id ?? null,
+      categories: (tourData as any).categories ?? null,
+    });
+
     setTitle(tourData.title ?? "");
     setCity(tourData.city ?? "");
     setIsPublished(!!tourData.is_published);
+    setCategoryId(tourData.category_id ?? "");
+
 
     const { data: stopsData, error: stopsErr } = await supabase
       .from("stops")
@@ -121,7 +161,9 @@ export default function TourDetailPage() {
       setError(stopsErr.message);
       setStops([]);
     } else {
-      setStops((stopsData ?? []).map((s: any) => ({ ...s, pass_by: !!s.pass_by })));
+      setStops(
+        (stopsData ?? []).map((s: any) => ({ ...s, pass_by: !!s.pass_by }))
+      );
     }
 
     setLoading(false);
@@ -149,6 +191,7 @@ export default function TourDetailPage() {
         title: title.trim(),
         city: city.trim() || null,
         is_published: isPublished,
+        category_id: categoryId ? categoryId : null, // ✅ NEW
         updated_at: new Date().toISOString(),
       })
       .eq("id", tourId);
@@ -522,6 +565,26 @@ export default function TourDetailPage() {
               onChange={(e) => setCity(e.target.value)}
               placeholder="Optional"
             />
+          </div>
+
+          {/* ✅ Category dropdown */}
+          <div className="md:col-span-2">
+            <label className="text-sm font-medium">Category</label>
+            <select
+              className="border rounded-lg p-2 w-full"
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              disabled={loadingCats}
+            >
+              <option value="">
+                {loadingCats ? "Loading categories..." : "No category"}
+              </option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
