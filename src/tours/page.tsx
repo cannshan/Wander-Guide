@@ -58,6 +58,14 @@ export default function ToursPage() {
             Refresh
           </button>
 
+          {/* ✅ NEW: Categories link */}
+          <Link
+            href="/categories"
+            className="border px-4 py-2 rounded-lg"
+          >
+            Categories
+          </Link>
+
           <Link
             href="/tours/new"
             className="bg-black text-white px-4 py-2 rounded-lg"
@@ -76,9 +84,7 @@ export default function ToursPage() {
       </div>
 
       {error && (
-        <div className="border rounded-xl p-3 mb-4 text-red-600">
-          {error}
-        </div>
+        <div className="border rounded-xl p-3 mb-4 text-red-600">{error}</div>
       )}
 
       {loading ? (
@@ -105,6 +111,13 @@ export default function ToursPage() {
           ))}
         </ul>
       )}
+
+      {/* ✅ Important note for your repo */}
+      <div className="mt-6 text-xs text-gray-500">
+        If /categories still 404s, make sure the file is at{" "}
+        <span className="font-mono">src/app/categories/page.tsx</span> (not{" "}
+        <span className="font-mono">src/app/app/categories/page.tsx</span>).
+      </div>
     </div>
   );
 }
