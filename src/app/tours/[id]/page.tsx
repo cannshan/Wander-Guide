@@ -8,6 +8,10 @@ import { uploadStopImage } from "@/lib/uploadStopImage";
 import { deleteStopImage } from "@/lib/deleteStopImage";
 import { deleteStopAudio } from "@/lib/deleteStopAudio";
 
+// ✅ NEW (tour cover image helpers)
+import { uploadTourImage } from "@/lib/uploadTourImage";
+import { deleteTourImage } from "@/lib/deleteTourImage";
+
 type Category = {
   id: string;
   name: string;
@@ -19,6 +23,9 @@ type Tour = {
   city: string | null;
   is_published: boolean;
   intro_audio_url: string | null;
+
+  // ✅ NEW: tour cover image
+  cover_image_url: string | null;
 
   // ✅ Category support
   category_id: string | null;
@@ -79,6 +86,10 @@ export default function TourDetailPage() {
   const [uploadingStopId, setUploadingStopId] = useState<string | null>(null);
   const [uploadingNewStop, setUploadingNewStop] = useState(false);
 
+  // ✅ NEW: Tour cover upload/delete state
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [deletingCover, setDeletingCover] = useState(false);
+
   // Image upload state
   const [uploadingStopImageId, setUploadingStopImageId] = useState<string | null>(
     null
@@ -97,6 +108,9 @@ export default function TourDetailPage() {
   const introFileRef = useRef<HTMLInputElement | null>(null);
   const newStopFileRef = useRef<HTMLInputElement | null>(null);
   const stopFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // ✅ NEW: Tour cover file input
+  const coverFileRef = useRef<HTMLInputElement | null>(null);
 
   // Image file inputs
   const newStopImageRef = useRef<HTMLInputElement | null>(null);
@@ -123,7 +137,9 @@ export default function TourDetailPage() {
 
     const { data: tourData, error: tourErr } = await supabase
       .from("tours")
-      .select("id,title,city,is_published,intro_audio_url,category_id,categories(name)")
+      .select(
+        "id,title,city,is_published,intro_audio_url,cover_image_url,category_id,categories(name)"
+      )
       .eq("id", tourId)
       .single();
 
@@ -139,6 +155,10 @@ export default function TourDetailPage() {
       city: tourData.city ?? null,
       is_published: !!tourData.is_published,
       intro_audio_url: tourData.intro_audio_url ?? null,
+
+      // ✅ NEW
+      cover_image_url: (tourData as any).cover_image_url ?? null,
+
       category_id: tourData.category_id ?? null,
       categories: (tourData as any).categories ?? null,
     });
@@ -147,7 +167,6 @@ export default function TourDetailPage() {
     setCity(tourData.city ?? "");
     setIsPublished(!!tourData.is_published);
     setCategoryId(tourData.category_id ?? "");
-
 
     const { data: stopsData, error: stopsErr } = await supabase
       .from("stops")
@@ -290,6 +309,48 @@ export default function TourDetailPage() {
     }
 
     await load();
+  };
+
+  /* ============================
+     ✅ Tour Cover Image Upload + Delete
+  ============================ */
+
+  const uploadCoverImage = async (file: File) => {
+    if (!tour) return;
+    setError(null);
+    setUploadingCover(true);
+
+    try {
+      const url = await uploadTourImage(tour.id, file);
+
+      // uploadTourImage already updates DB, but keep UI in sync immediately
+      setTour((t) => (t ? { ...t, cover_image_url: url } : t));
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to upload tour cover image.");
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
+  const handleDeleteCoverImage = async () => {
+    if (!tour?.cover_image_url) return;
+
+    const ok = confirm("Delete this tour cover image?");
+    if (!ok) return;
+
+    setError(null);
+    setDeletingCover(true);
+
+    try {
+      await deleteTourImage(tour.id, tour.cover_image_url);
+
+      // deleteTourImage already clears DB, but keep UI in sync immediately
+      setTour((t) => (t ? { ...t, cover_image_url: null } : t));
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to delete tour cover image.");
+    } finally {
+      setDeletingCover(false);
+    }
   };
 
   /* ============================
@@ -596,6 +657,78 @@ export default function TourDetailPage() {
           />
           Published (visible to public app)
         </label>
+
+        {/* ✅ NEW: Tour Cover Image */}
+        <div className="border rounded-lg p-3 space-y-2">
+          <div className="text-sm font-medium">Tour Cover Image</div>
+
+          <input
+            ref={coverFileRef}
+            type="file"
+            className="hidden"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadCoverImage(file);
+              e.currentTarget.value = "";
+            }}
+          />
+
+          {tour.cover_image_url ? (
+            <div className="space-y-2">
+              <div className="overflow-hidden rounded-lg border bg-gray-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={tour.cover_image_url}
+                  alt="Tour cover"
+                  className="w-full h-48 object-cover"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  type="button"
+                  className="border px-4 py-2 rounded-lg"
+                  disabled={uploadingCover}
+                  onClick={() => coverFileRef.current?.click()}
+                >
+                  {uploadingCover ? "Uploading…" : "Replace image"}
+                </button>
+
+                <a
+                  className="text-sm underline"
+                  href={tour.cover_image_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Preview
+                </a>
+
+                <button
+                  type="button"
+                  className="border px-2 py-1 rounded-lg text-red-600 text-xs"
+                  disabled={deletingCover}
+                  onClick={handleDeleteCoverImage}
+                >
+                  {deletingCover ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="border px-4 py-2 rounded-lg"
+                disabled={uploadingCover}
+                onClick={() => coverFileRef.current?.click()}
+              >
+                {uploadingCover ? "Uploading…" : "Upload image"}
+              </button>
+
+              <span className="text-sm text-gray-500">No image uploaded</span>
+            </div>
+          )}
+        </div>
 
         {/* Intro Audio */}
         <div className="border rounded-lg p-3 space-y-2">
