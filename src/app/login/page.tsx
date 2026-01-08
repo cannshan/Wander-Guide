@@ -28,7 +28,7 @@ export default function LoginPage() {
     }
 
     // ✅ If /tours doesn't exist yet, don't 404 after login
-    router.push("/categories");
+    router.push("/tours");
   };
 
   return (
