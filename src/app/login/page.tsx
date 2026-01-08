@@ -16,7 +16,7 @@ export default function LoginPage() {
     setError(null);
 
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: email.trim(), // ✅ trim to avoid invisible whitespace issues
       password,
     });
 
@@ -27,7 +27,8 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/tours");
+    // ✅ If /tours doesn't exist yet, don't 404 after login
+    router.push("/categories");
   };
 
   return (
@@ -40,6 +41,7 @@ export default function LoginPage() {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
         />
 
         <input
@@ -48,6 +50,7 @@ export default function LoginPage() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
         />
 
         {error && <p className="text-red-600 text-sm">{error}</p>}
@@ -62,6 +65,12 @@ export default function LoginPage() {
 
         <p className="text-xs text-gray-500">
           Create your admin user in Supabase → Authentication → Users.
+        </p>
+
+        <p className="text-xs text-gray-500">
+          Note: this file must be located at{" "}
+          <span className="font-mono">src/app/login/page.tsx</span> for the{" "}
+          <span className="font-mono">/login</span> route to work.
         </p>
       </div>
     </div>
