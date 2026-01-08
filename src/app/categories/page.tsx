@@ -200,12 +200,8 @@ export default function CategoriesPage() {
         )}
       </div>
 
-      {/* optional: keep a direct link visible for debugging */}
-      <div className="text-xs text-gray-500">
-        Debug: If /tours 404s, confirm you have{" "}
-        <span className="font-mono">src/app/tours/page.tsx</span> in this repo
-        (and not under <span className="font-mono">src/app/app</span>).
-      </div>
+     
+      
     </div>
   );
 }
