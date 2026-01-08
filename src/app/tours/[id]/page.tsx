@@ -8,9 +8,16 @@ import { uploadStopImage } from "@/lib/uploadStopImage";
 import { deleteStopImage } from "@/lib/deleteStopImage";
 import { deleteStopAudio } from "@/lib/deleteStopAudio";
 
-// ✅ NEW (tour cover image helpers)
+// ✅ Tour cover image helpers
 import { uploadTourImage } from "@/lib/uploadTourImage";
 import { deleteTourImage } from "@/lib/deleteTourImage";
+
+// ✅ NEW: per-button image helpers (you must add these two lib files)
+import {
+  uploadTourButtonImage,
+  type TourButtonImageKey,
+} from "@/lib/uploadTourButtonImage";
+import { deleteTourButtonImage } from "@/lib/deleteTourButtonImage";
 
 type Category = {
   id: string;
@@ -24,12 +31,17 @@ type Tour = {
   is_published: boolean;
   intro_audio_url: string | null;
 
-  // ✅ NEW: tour cover image
+  // ✅ Tour cover image
   cover_image_url: string | null;
+
+  // ✅ NEW: per-button images
+  highlights_image_url: string | null;
+  map_image_url: string | null;
+  start_image_url: string | null;
 
   // ✅ Category support
   category_id: string | null;
-  categories?: { name: string } | null; // optional join helper
+  categories?: { name: string } | null;
 };
 
 type Stop = {
@@ -39,7 +51,7 @@ type Stop = {
   lat: number;
   lng: number;
   radius_m: number;
-  pass_by: boolean; // ✅ NEW
+  pass_by: boolean;
   audio_url: string | null;
   image_url: string | null;
   sort_order: number;
@@ -50,7 +62,7 @@ const blankStop = {
   lat: "",
   lng: "",
   radius_m: 75,
-  pass_by: false, // ✅ NEW
+  pass_by: false,
   audio_url: "",
   image_url: "",
 };
@@ -69,7 +81,7 @@ export default function TourDetailPage() {
   const [city, setCity] = useState("");
   const [isPublished, setIsPublished] = useState(true);
 
-  // ✅ Category form state
+  // Category form state
   const [categoryId, setCategoryId] = useState<string>("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
@@ -86,11 +98,17 @@ export default function TourDetailPage() {
   const [uploadingStopId, setUploadingStopId] = useState<string | null>(null);
   const [uploadingNewStop, setUploadingNewStop] = useState(false);
 
-  // ✅ NEW: Tour cover upload/delete state
+  // Tour cover upload/delete state
   const [uploadingCover, setUploadingCover] = useState(false);
   const [deletingCover, setDeletingCover] = useState(false);
 
-  // Image upload state
+  // ✅ NEW: per-button image upload/delete state
+  const [uploadingButtonKey, setUploadingButtonKey] =
+    useState<TourButtonImageKey | null>(null);
+  const [deletingButtonKey, setDeletingButtonKey] =
+    useState<TourButtonImageKey | null>(null);
+
+  // Stop image upload state
   const [uploadingStopImageId, setUploadingStopImageId] = useState<string | null>(
     null
   );
@@ -109,8 +127,13 @@ export default function TourDetailPage() {
   const newStopFileRef = useRef<HTMLInputElement | null>(null);
   const stopFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // ✅ NEW: Tour cover file input
+  // Tour cover file input
   const coverFileRef = useRef<HTMLInputElement | null>(null);
+
+  // ✅ NEW: per-button file inputs
+  const highlightsFileRef = useRef<HTMLInputElement | null>(null);
+  const mapFileRef = useRef<HTMLInputElement | null>(null);
+  const startFileRef = useRef<HTMLInputElement | null>(null);
 
   // Image file inputs
   const newStopImageRef = useRef<HTMLInputElement | null>(null);
@@ -120,7 +143,7 @@ export default function TourDetailPage() {
     setLoading(true);
     setError(null);
 
-    // ✅ Load categories for dropdown
+    // Load categories for dropdown
     setLoadingCats(true);
     const { data: cats, error: catsErr } = await supabase
       .from("categories")
@@ -138,7 +161,7 @@ export default function TourDetailPage() {
     const { data: tourData, error: tourErr } = await supabase
       .from("tours")
       .select(
-        "id,title,city,is_published,intro_audio_url,cover_image_url,category_id,categories(name)"
+        "id,title,city,is_published,intro_audio_url,cover_image_url,highlights_image_url,map_image_url,start_image_url,category_id,categories(name)"
       )
       .eq("id", tourId)
       .single();
@@ -156,8 +179,12 @@ export default function TourDetailPage() {
       is_published: !!tourData.is_published,
       intro_audio_url: tourData.intro_audio_url ?? null,
 
-      // ✅ NEW
       cover_image_url: (tourData as any).cover_image_url ?? null,
+
+      // ✅ NEW
+      highlights_image_url: (tourData as any).highlights_image_url ?? null,
+      map_image_url: (tourData as any).map_image_url ?? null,
+      start_image_url: (tourData as any).start_image_url ?? null,
 
       category_id: tourData.category_id ?? null,
       categories: (tourData as any).categories ?? null,
@@ -172,7 +199,7 @@ export default function TourDetailPage() {
       .from("stops")
       .select(
         "id,tour_id,title,lat,lng,radius_m,pass_by,audio_url,image_url,sort_order"
-      ) // ✅ include pass_by
+      )
       .eq("tour_id", tourId)
       .order("sort_order", { ascending: true });
 
@@ -210,7 +237,7 @@ export default function TourDetailPage() {
         title: title.trim(),
         city: city.trim() || null,
         is_published: isPublished,
-        category_id: categoryId ? categoryId : null, // ✅ NEW
+        category_id: categoryId ? categoryId : null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", tourId);
@@ -271,7 +298,7 @@ export default function TourDetailPage() {
       lat,
       lng,
       radius_m: Number.isFinite(radius) ? radius : 75,
-      pass_by: !!newStop.pass_by, // ✅ NEW
+      pass_by: !!newStop.pass_by,
       audio_url: newStop.audio_url?.trim() || null,
       image_url: newStop.image_url?.trim() || null,
       sort_order: nextSort,
@@ -312,7 +339,7 @@ export default function TourDetailPage() {
   };
 
   /* ============================
-     ✅ Tour Cover Image Upload + Delete
+     Tour Cover Image Upload + Delete
   ============================ */
 
   const uploadCoverImage = async (file: File) => {
@@ -322,8 +349,6 @@ export default function TourDetailPage() {
 
     try {
       const url = await uploadTourImage(tour.id, file);
-
-      // uploadTourImage already updates DB, but keep UI in sync immediately
       setTour((t) => (t ? { ...t, cover_image_url: url } : t));
     } catch (e: any) {
       setError(e?.message ?? "Failed to upload tour cover image.");
@@ -343,13 +368,51 @@ export default function TourDetailPage() {
 
     try {
       await deleteTourImage(tour.id, tour.cover_image_url);
-
-      // deleteTourImage already clears DB, but keep UI in sync immediately
       setTour((t) => (t ? { ...t, cover_image_url: null } : t));
     } catch (e: any) {
       setError(e?.message ?? "Failed to delete tour cover image.");
     } finally {
       setDeletingCover(false);
+    }
+  };
+
+  /* ============================
+     ✅ NEW: Tour Button Images (Highlights / Map / Start) Upload + Delete
+  ============================ */
+
+  const uploadButtonImage = async (key: TourButtonImageKey, file: File) => {
+    if (!tour) return;
+    setError(null);
+    setUploadingButtonKey(key);
+
+    try {
+      const url = await uploadTourButtonImage(tour.id, file, key);
+      setTour((t) => (t ? ({ ...t, [key]: url } as any) : t));
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to upload button image.");
+    } finally {
+      setUploadingButtonKey(null);
+    }
+  };
+
+  const handleDeleteButtonImage = async (key: TourButtonImageKey) => {
+    if (!tour) return;
+    const currentUrl = (tour as any)[key] as string | null;
+    if (!currentUrl) return;
+
+    const ok = confirm("Delete this button image?");
+    if (!ok) return;
+
+    setError(null);
+    setDeletingButtonKey(key);
+
+    try {
+      await deleteTourButtonImage(tour.id, currentUrl, key);
+      setTour((t) => (t ? ({ ...t, [key]: null } as any) : t));
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to delete button image.");
+    } finally {
+      setDeletingButtonKey(null);
     }
   };
 
@@ -428,7 +491,7 @@ export default function TourDetailPage() {
   };
 
   /* ============================
-     ✅ Audio Delete Handler
+     Audio Delete Handler
   ============================ */
 
   const handleDeleteStopAudio = async (stopId: string, audioUrl: string) => {
@@ -441,7 +504,6 @@ export default function TourDetailPage() {
     try {
       await deleteStopAudio(stopId, audioUrl);
 
-      // Clear DB url (important even if storage delete fails)
       const { error: updErr } = await supabase
         .from("stops")
         .update({ audio_url: null, updated_at: new Date().toISOString() })
@@ -460,7 +522,7 @@ export default function TourDetailPage() {
   };
 
   /* ============================
-     ✅ Image Upload + Delete
+     Stop Image Upload + Delete
   ============================ */
 
   const uploadStopImageForExistingStop = async (stopId: string, file: File) => {
@@ -512,7 +574,6 @@ export default function TourDetailPage() {
     try {
       await deleteStopImage(stopId, imageUrl);
 
-      // Clear DB url (important even if storage delete fails)
       const { error: updErr } = await supabase
         .from("stops")
         .update({ image_url: null, updated_at: new Date().toISOString() })
@@ -584,6 +645,32 @@ export default function TourDetailPage() {
     );
   }
 
+  const buttonCards: Array<{
+    label: string;
+    key: TourButtonImageKey;
+    url: string | null;
+    ref: React.RefObject<HTMLInputElement | null>;
+  }> = [
+    {
+      label: "Highlights button image",
+      key: "highlights_image_url",
+      url: tour.highlights_image_url,
+      ref: highlightsFileRef,
+    },
+    {
+      label: "Map button image",
+      key: "map_image_url",
+      url: tour.map_image_url,
+      ref: mapFileRef,
+    },
+    {
+      label: "Where tour starts button image",
+      key: "start_image_url",
+      url: tour.start_image_url,
+      ref: startFileRef,
+    },
+  ];
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-8">
       <div className="flex items-center justify-between gap-3">
@@ -628,7 +715,7 @@ export default function TourDetailPage() {
             />
           </div>
 
-          {/* ✅ Category dropdown */}
+          {/* Category dropdown */}
           <div className="md:col-span-2">
             <label className="text-sm font-medium">Category</label>
             <select
@@ -658,7 +745,7 @@ export default function TourDetailPage() {
           Published (visible to public app)
         </label>
 
-        {/* ✅ NEW: Tour Cover Image */}
+        {/* Tour Cover Image */}
         <div className="border rounded-lg p-3 space-y-2">
           <div className="text-sm font-medium">Tour Cover Image</div>
 
@@ -730,6 +817,86 @@ export default function TourDetailPage() {
           )}
         </div>
 
+        {/* ✅ NEW: Button Images */}
+        <div className="border rounded-lg p-3 space-y-3">
+          <div className="text-sm font-medium">
+            Button Images (Highlights / Map / Where Tour Starts)
+          </div>
+
+          {buttonCards.map((b) => (
+            <div key={b.key} className="border rounded-lg p-3 space-y-2">
+              <div className="text-sm font-medium">{b.label}</div>
+
+              <input
+                ref={b.ref}
+                type="file"
+                className="hidden"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadButtonImage(b.key, file);
+                  e.currentTarget.value = "";
+                }}
+              />
+
+              {b.url ? (
+                <div className="space-y-2">
+                  <div className="overflow-hidden rounded-lg border bg-gray-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={b.url}
+                      alt={b.label}
+                      className="w-full h-40 object-cover"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      className="border px-4 py-2 rounded-lg"
+                      disabled={uploadingButtonKey === b.key}
+                      onClick={() => b.ref.current?.click()}
+                    >
+                      {uploadingButtonKey === b.key ? "Uploading…" : "Replace image"}
+                    </button>
+
+                    <a
+                      className="text-sm underline"
+                      href={b.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Preview
+                    </a>
+
+                    <button
+                      type="button"
+                      className="border px-2 py-1 rounded-lg text-red-600 text-xs"
+                      disabled={deletingButtonKey === b.key}
+                      onClick={() => handleDeleteButtonImage(b.key)}
+                    >
+                      {deletingButtonKey === b.key ? "Deleting…" : "Delete"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="border px-4 py-2 rounded-lg"
+                    disabled={uploadingButtonKey === b.key}
+                    onClick={() => b.ref.current?.click()}
+                  >
+                    {uploadingButtonKey === b.key ? "Uploading…" : "Upload image"}
+                  </button>
+
+                  <span className="text-sm text-gray-500">No image uploaded</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
         {/* Intro Audio */}
         <div className="border rounded-lg p-3 space-y-2">
           <div className="text-sm font-medium">Intro Audio</div>
@@ -791,11 +958,13 @@ export default function TourDetailPage() {
               className="border rounded-lg p-2 w-full"
               placeholder="e.g., Bar Harbor Lobster Pound"
               value={newStop.title}
-              onChange={(e) => setNewStop((s) => ({ ...s, title: e.target.value }))}
+              onChange={(e) =>
+                setNewStop((s) => ({ ...s, title: e.target.value }))
+              }
             />
           </div>
 
-          {/* ✅ Pass By */}
+          {/* Pass By */}
           <label className="flex items-center gap-2 text-sm md:col-span-2">
             <input
               type="checkbox"
@@ -950,7 +1119,9 @@ export default function TourDetailPage() {
                     <input
                       className="border rounded-lg p-1 ml-2"
                       defaultValue={s.title}
-                      onBlur={(e) => updateStopField(s.id, { title: e.target.value })}
+                      onBlur={(e) =>
+                        updateStopField(s.id, { title: e.target.value })
+                      }
                     />
                   </div>
 
@@ -978,7 +1149,7 @@ export default function TourDetailPage() {
                   </div>
                 </div>
 
-                {/* ✅ Pass By toggle (existing stop) */}
+                {/* Pass By toggle */}
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
@@ -1003,7 +1174,9 @@ export default function TourDetailPage() {
                   </div>
 
                   <div>
-                    <div className="text-xs font-medium text-gray-700">Longitude</div>
+                    <div className="text-xs font-medium text-gray-700">
+                      Longitude
+                    </div>
                     <input
                       className="border rounded-lg p-1 w-full"
                       defaultValue={String(s.lng)}
@@ -1069,13 +1242,17 @@ export default function TourDetailPage() {
                             type="button"
                             className="border px-2 py-1 rounded-lg text-red-600 text-xs"
                             disabled={deletingStopAudioId === s.id}
-                            onClick={() => handleDeleteStopAudio(s.id, s.audio_url!)}
+                            onClick={() =>
+                              handleDeleteStopAudio(s.id, s.audio_url!)
+                            }
                           >
                             {deletingStopAudioId === s.id ? "Deleting…" : "Delete"}
                           </button>
                         </div>
                       ) : (
-                        <span className="text-sm text-gray-500">No file uploaded</span>
+                        <span className="text-sm text-gray-500">
+                          No file uploaded
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1130,13 +1307,17 @@ export default function TourDetailPage() {
                           type="button"
                           className="border px-2 py-1 rounded-lg text-red-600 text-xs"
                           disabled={deletingStopImageId === s.id}
-                          onClick={() => handleDeleteStopImage(s.id, s.image_url!)}
+                          onClick={() =>
+                            handleDeleteStopImage(s.id, s.image_url!)
+                          }
                         >
                           {deletingStopImageId === s.id ? "Deleting…" : "Delete"}
                         </button>
                       </div>
                     ) : (
-                      <span className="text-sm text-gray-500">No image uploaded</span>
+                      <span className="text-sm text-gray-500">
+                        No image uploaded
+                      </span>
                     )}
                   </div>
                 </div>
