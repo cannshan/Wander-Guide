@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 type Category = {
@@ -11,6 +12,8 @@ type Category = {
 };
 
 export default function CategoriesPage() {
+  const router = useRouter();
+
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [newName, setNewName] = useState("");
@@ -66,8 +69,7 @@ export default function CategoriesPage() {
     setDeletingId(id);
     setError(null);
 
-    // If you kept ON DELETE RESTRICT, Supabase will error if tours exist.
-    // This pre-check gives a friendlier message.
+    // Friendly pre-check: how many tours use this category?
     const { count, error: countErr } = await supabase
       .from("tours")
       .select("id", { count: "exact", head: true })
@@ -99,6 +101,22 @@ export default function CategoriesPage() {
     await load();
   }
 
+  // ✅ Safer "Back to Tours" to avoid getting stuck on a 404
+  async function goBackToTours() {
+    try {
+      // If /tours exists in the deployed build, this will be 200/307/etc.
+      const res = await fetch("/tours", { method: "GET" });
+      if (res.ok || res.status === 307 || res.status === 308) {
+        router.push("/tours");
+        return;
+      }
+    } catch {
+      // ignore
+    }
+    // fallback: go home (your / probably redirects to login or dashboard)
+    router.push("/");
+  }
+
   return (
     <div className="max-w-3xl mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -109,12 +127,14 @@ export default function CategoriesPage() {
           </div>
         </div>
 
-        <Link
-          href="/tours"
+        {/* ✅ Use a button so we can failover if /tours isn't present */}
+        <button
+          type="button"
+          onClick={goBackToTours}
           className="border px-4 py-2 rounded-lg hover:bg-gray-50"
         >
           ← Back to Tours
-        </Link>
+        </button>
       </div>
 
       {error ? (
@@ -151,6 +171,7 @@ export default function CategoriesPage() {
           <button
             onClick={load}
             className="border px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50"
+            type="button"
           >
             Refresh
           </button>
@@ -169,6 +190,7 @@ export default function CategoriesPage() {
                   onClick={() => deleteCategory(c.id)}
                   disabled={deletingId === c.id}
                   className="border px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+                  type="button"
                 >
                   {deletingId === c.id ? "Deleting..." : "Delete"}
                 </button>
@@ -176,6 +198,13 @@ export default function CategoriesPage() {
             ))}
           </ul>
         )}
+      </div>
+
+      {/* optional: keep a direct link visible for debugging */}
+      <div className="text-xs text-gray-500">
+        Debug: If /tours 404s, confirm you have{" "}
+        <span className="font-mono">src/app/tours/page.tsx</span> in this repo
+        (and not under <span className="font-mono">src/app/app</span>).
       </div>
     </div>
   );
