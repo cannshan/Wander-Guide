@@ -112,12 +112,7 @@ export default function ToursPage() {
         </ul>
       )}
 
-      {/* ✅ Important note for your repo */}
-      <div className="mt-6 text-xs text-gray-500">
-        If /categories still 404s, make sure the file is at{" "}
-        <span className="font-mono">src/app/categories/page.tsx</span> (not{" "}
-        <span className="font-mono">src/app/app/categories/page.tsx</span>).
-      </div>
+
     </div>
   );
 }
