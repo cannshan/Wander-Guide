@@ -4,11 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { uploadCategoryImage } from "@/lib/uploadCategoryImage";
 
 type Category = {
   id: string;
   name: string;
   created_at: string;
+  cover_image_url?: string | null;
 };
 
 export default function CategoriesPage() {
@@ -20,6 +22,7 @@ export default function CategoriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   const sorted = useMemo(() => {
     return [...categories].sort((a, b) =>
@@ -33,7 +36,7 @@ export default function CategoriesPage() {
 
     const { data, error } = await supabase
       .from("categories")
-      .select("id,name,created_at")
+      .select("id,name,created_at,cover_image_url")
       .order("name", { ascending: true });
 
     if (error) setError(error.message);
@@ -69,7 +72,6 @@ export default function CategoriesPage() {
     setDeletingId(id);
     setError(null);
 
-    // Friendly pre-check: how many tours use this category?
     const { count, error: countErr } = await supabase
       .from("tours")
       .select("id", { count: "exact", head: true })
@@ -101,19 +103,37 @@ export default function CategoriesPage() {
     await load();
   }
 
-  // ✅ Safer "Back to Tours" to avoid getting stuck on a 404
+  async function onPickImage(categoryId: string, file: File | null) {
+    if (!file) return;
+    setUploadingId(categoryId);
+    setError(null);
+
+    try {
+      const publicUrl = await uploadCategoryImage(file, categoryId);
+
+      const { error } = await supabase
+        .from("categories")
+        .update({ cover_image_url: publicUrl })
+        .eq("id", categoryId);
+
+      if (error) throw error;
+
+      await load();
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to upload image");
+    } finally {
+      setUploadingId(null);
+    }
+  }
+
   async function goBackToTours() {
     try {
-      // If /tours exists in the deployed build, this will be 200/307/etc.
       const res = await fetch("/tours", { method: "GET" });
       if (res.ok || res.status === 307 || res.status === 308) {
         router.push("/tours");
         return;
       }
-    } catch {
-      // ignore
-    }
-    // fallback: go home (your / probably redirects to login or dashboard)
+    } catch {}
     router.push("/");
   }
 
@@ -127,7 +147,6 @@ export default function CategoriesPage() {
           </div>
         </div>
 
-        {/* ✅ Use a button so we can failover if /tours isn't present */}
         <button
           type="button"
           onClick={goBackToTours}
@@ -184,12 +203,53 @@ export default function CategoriesPage() {
         ) : (
           <ul className="divide-y">
             {sorted.map((c) => (
-              <li key={c.id} className="py-3 flex items-center justify-between">
-                <div className="font-medium">{c.name}</div>
+              <li key={c.id} className="py-4 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4 min-w-0">
+                  <div className="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 border shrink-0">
+                    {c.cover_image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={c.cover_image_url}
+                        alt={c.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
+                        No image
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{c.name}</div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <label className="border px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 cursor-pointer">
+                        {uploadingId === c.id
+                          ? "Uploading..."
+                          : c.cover_image_url
+                          ? "Replace image"
+                          : "Upload image"}
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          disabled={uploadingId === c.id}
+                          onChange={(e) =>
+                            onPickImage(c.id, e.target.files?.[0] ?? null)
+                          }
+                        />
+                      </label>
+                      <span className="text-xs text-gray-500">
+                        Recommended: 1200×800 (JPG/PNG/WebP)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
                 <button
                   onClick={() => deleteCategory(c.id)}
-                  disabled={deletingId === c.id}
-                  className="border px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+                  disabled={deletingId === c.id || uploadingId === c.id}
+                  className="border px-3 py-1.5 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 shrink-0"
                   type="button"
                 >
                   {deletingId === c.id ? "Deleting..." : "Delete"}
@@ -199,9 +259,6 @@ export default function CategoriesPage() {
           </ul>
         )}
       </div>
-
-     
-      
     </div>
   );
 }
