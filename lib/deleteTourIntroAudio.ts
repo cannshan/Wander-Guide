@@ -1,28 +1,44 @@
 import { supabase } from "@/lib/supabaseClient";
 
-export async function deleteTourIntroAudio(
-  tourId: string,
-  audioUrl: string
-) {
-  if (!audioUrl) return;
+function getStoragePathFromPublicUrl(publicUrl: string) {
+  const marker = "/storage/v1/object/public/";
+  const i = publicUrl.indexOf(marker);
+  if (i === -1) return null;
 
-  // Extract storage path from public URL
-  const path = audioUrl.split("/storage/v1/object/public/")[1];
+  const after = publicUrl.slice(i + marker.length); // "<bucket>/<path>"
+  const firstSlash = after.indexOf("/");
+  if (firstSlash === -1) return null;
 
-  if (!path) throw new Error("Invalid audio URL");
+  const bucket = after.slice(0, firstSlash);
+  const path = after.slice(firstSlash + 1);
+  if (!bucket || !path) return null;
 
-  // Delete file from storage
-  const { error: storageError } = await supabase.storage
-    .from("audio")
-    .remove([path]);
+  return { bucket, path };
+}
 
-  if (storageError) throw storageError;
+export async function deleteTourIntroAudio(tourId: string, audioUrl: string) {
+  const parsed = getStoragePathFromPublicUrl(audioUrl);
 
-  // Clear DB field
-  const { error: dbError } = await supabase
+  // Best-effort storage delete
+  if (parsed?.bucket && parsed?.path) {
+    const { error: storageErr } = await supabase.storage
+      .from(parsed.bucket)
+      .remove([parsed.path]);
+
+    if (storageErr) {
+      console.warn("Intro audio storage delete failed:", storageErr.message);
+    }
+  } else {
+    console.warn("Could not parse intro audio storage path from URL");
+  }
+
+  // Clear DB pointer
+  const { error: dbErr } = await supabase
     .from("tours")
     .update({ intro_audio_url: null, updated_at: new Date().toISOString() })
     .eq("id", tourId);
 
-  if (dbError) throw dbError;
+  if (dbErr) throw dbErr;
+
+  return true;
 }
