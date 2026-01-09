@@ -128,6 +128,27 @@ export default function TourDetailPage() {
   // ✅ NEW: intro audio delete state
   const [deletingIntro, setDeletingIntro] = useState(false);
 
+  // ✅ NEW: Stop dirty tracking + per-stop save state
+  const [dirtyStops, setDirtyStops] = useState<Set<string>>(new Set());
+  const [savingStopIds, setSavingStopIds] = useState<Set<string>>(new Set());
+
+  function markStopDirty(stopId: string) {
+    setDirtyStops((prev) => {
+      const next = new Set(prev);
+      next.add(stopId);
+      return next;
+    });
+  }
+
+  function setStopSaving(stopId: string, saving: boolean) {
+    setSavingStopIds((prev) => {
+      const next = new Set(prev);
+      if (saving) next.add(stopId);
+      else next.delete(stopId);
+      return next;
+    });
+  }
+
   // Hidden file inputs
   const introFileRef = useRef<HTMLInputElement | null>(null);
   const newStopFileRef = useRef<HTMLInputElement | null>(null);
@@ -217,6 +238,10 @@ export default function TourDetailPage() {
         (stopsData ?? []).map((s: any) => ({ ...s, pass_by: !!s.pass_by }))
       );
     }
+
+    // ✅ Clear dirty state after a fresh load
+    setDirtyStops(new Set());
+    setSavingStopIds(new Set());
 
     setLoading(false);
   };
@@ -322,30 +347,61 @@ export default function TourDetailPage() {
     await load();
   };
 
-  const updateStopField = async (
+  /* ============================
+     ✅ NEW: Stop Edit (LOCAL ONLY) + Save button per stop
+  ============================ */
+
+  const updateStopLocal = (
     stopId: string,
     patch: Partial<Pick<Stop, "title" | "lat" | "lng" | "radius_m" | "pass_by">>
   ) => {
+    setStops((prev) =>
+      prev.map((s) => (s.id === stopId ? { ...s, ...patch } : s))
+    );
+    markStopDirty(stopId);
+  };
+
+  const saveStop = async (stopId: string) => {
+    const stop = stops.find((s) => s.id === stopId);
+    if (!stop) return;
+
     setError(null);
+    setStopSaving(stopId, true);
 
-    const payload: any = { ...patch, updated_at: new Date().toISOString() };
-    if (payload.lat !== undefined) payload.lat = Number(payload.lat);
-    if (payload.lng !== undefined) payload.lng = Number(payload.lng);
-    if (payload.radius_m !== undefined)
-      payload.radius_m = Number(payload.radius_m);
-    if (payload.pass_by !== undefined) payload.pass_by = !!payload.pass_by;
+    try {
+      const payload = {
+        title: stop.title?.trim(),
+        lat: Number(stop.lat),
+        lng: Number(stop.lng),
+        radius_m: Number(stop.radius_m),
+        pass_by: !!stop.pass_by,
+        updated_at: new Date().toISOString(),
+      };
 
-    const { error } = await supabase
-      .from("stops")
-      .update(payload)
-      .eq("id", stopId);
+      if (!payload.title) throw new Error("Stop title is required.");
+      if (!Number.isFinite(payload.lat) || !Number.isFinite(payload.lng)) {
+        throw new Error("Lat/Lng must be valid numbers.");
+      }
+      if (!Number.isFinite(payload.radius_m)) payload.radius_m = 75;
 
-    if (error) {
-      setError(error.message);
-      return;
+      const { error } = await supabase
+        .from("stops")
+        .update(payload)
+        .eq("id", stopId);
+
+      if (error) throw error;
+
+      // Mark as clean
+      setDirtyStops((prev) => {
+        const next = new Set(prev);
+        next.delete(stopId);
+        return next;
+      });
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to save stop.");
+    } finally {
+      setStopSaving(stopId, false);
     }
-
-    await load();
   };
 
   /* ============================
@@ -1170,9 +1226,9 @@ export default function TourDetailPage() {
                     {i + 1}.{" "}
                     <input
                       className="border rounded-lg p-1 ml-2"
-                      defaultValue={s.title}
-                      onBlur={(e) =>
-                        updateStopField(s.id, { title: e.target.value })
+                      value={s.title}
+                      onChange={(e) =>
+                        updateStopLocal(s.id, { title: e.target.value })
                       }
                     />
                   </div>
@@ -1192,6 +1248,19 @@ export default function TourDetailPage() {
                     >
                       ↓
                     </button>
+
+                    <button
+                      className="bg-black text-white px-2 py-1 rounded-lg disabled:opacity-60"
+                      disabled={!dirtyStops.has(s.id) || savingStopIds.has(s.id)}
+                      onClick={() => saveStop(s.id)}
+                    >
+                      {savingStopIds.has(s.id)
+                        ? "Saving…"
+                        : dirtyStops.has(s.id)
+                        ? "Save"
+                        : "Saved"}
+                    </button>
+
                     <button
                       className="border px-2 py-1 rounded-lg text-red-600"
                       onClick={() => deleteStop(s.id)}
@@ -1205,9 +1274,9 @@ export default function TourDetailPage() {
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    defaultChecked={!!s.pass_by}
+                    checked={!!s.pass_by}
                     onChange={(e) =>
-                      updateStopField(s.id, { pass_by: e.target.checked })
+                      updateStopLocal(s.id, { pass_by: e.target.checked })
                     }
                   />
                   Pass By
@@ -1220,9 +1289,9 @@ export default function TourDetailPage() {
                     </div>
                     <input
                       className="border rounded-lg p-1 w-full"
-                      defaultValue={String(s.lat)}
-                      onBlur={(e) =>
-                        updateStopField(s.id, { lat: Number(e.target.value) })
+                      value={String(s.lat)}
+                      onChange={(e) =>
+                        updateStopLocal(s.id, { lat: Number(e.target.value) })
                       }
                     />
                   </div>
@@ -1233,9 +1302,9 @@ export default function TourDetailPage() {
                     </div>
                     <input
                       className="border rounded-lg p-1 w-full"
-                      defaultValue={String(s.lng)}
-                      onBlur={(e) =>
-                        updateStopField(s.id, { lng: Number(e.target.value) })
+                      value={String(s.lng)}
+                      onChange={(e) =>
+                        updateStopLocal(s.id, { lng: Number(e.target.value) })
                       }
                     />
                   </div>
@@ -1246,9 +1315,9 @@ export default function TourDetailPage() {
                     </div>
                     <input
                       className="border rounded-lg p-1 w-full"
-                      defaultValue={String(s.radius_m)}
-                      onBlur={(e) =>
-                        updateStopField(s.id, {
+                      value={String(s.radius_m)}
+                      onChange={(e) =>
+                        updateStopLocal(s.id, {
                           radius_m: Number(e.target.value),
                         })
                       }
@@ -1379,6 +1448,12 @@ export default function TourDetailPage() {
                     )}
                   </div>
                 </div>
+
+                {dirtyStops.has(s.id) && (
+                  <div className="text-xs text-gray-500">
+                    Unsaved changes — click <span className="font-medium">Save</span>.
+                  </div>
+                )}
               </div>
             ))}
           </div>
