@@ -53,13 +53,40 @@ type Tour = {
   categories?: { name: string } | null;
 };
 
+// ✅ Stronger typing for Supabase tour row
+type TourRow = {
+  id: string;
+  title: string | null;
+  city: string | null;
+  is_published: boolean | null;
+  intro_audio_url: string | null;
+
+  cover_image_url: string | null;
+  highlights_image_url: string | null;
+  map_image_url: string | null;
+  start_image_url: string | null;
+
+  start_touring_color_hex: string | null;
+  highlights_button_color_hex: string | null;
+  map_button_color_hex: string | null;
+  where_starts_button_color_hex: string | null;
+
+  category_id: string | null;
+
+  // Depending on your relationship, Supabase can return object or array.
+  // If it's one-to-one / many-to-one, it's usually an object (or null).
+  categories: { name: string } | null;
+};
+
 type Stop = {
   id: string;
   tour_id: string;
   title: string;
-  // ✅ allow paste-anything behavior in UI
+
+  // ✅ allow paste-anything behavior in UI (no Number() coercion in inputs)
   lat: string | number;
   lng: string | number;
+
   radius_m: number;
   pass_by: boolean;
   audio_url: string | null;
@@ -67,7 +94,15 @@ type Stop = {
   sort_order: number;
 };
 
-const blankStop = {
+const blankStop: {
+  title: string;
+  lat: string;
+  lng: string;
+  radius_m: number;
+  pass_by: boolean;
+  audio_url: string;
+  image_url: string;
+} = {
   title: "",
   lat: "",
   lng: "",
@@ -100,7 +135,7 @@ function safeColorForPicker(v: string | null | undefined, fallback: string) {
 
 export default function TourDetailPage() {
   const params = useParams<{ id: string }>();
-  const tourId = useMemo(() => params?.id as string, [params]);
+  const tourId = useMemo(() => (params?.id as string) ?? "", [params]);
   const router = useRouter();
 
   const [tour, setTour] = useState<Tour | null>(null);
@@ -219,7 +254,7 @@ export default function TourDetailPage() {
     }
     setLoadingCats(false);
 
-    const { data: tourData, error: tourErr } = await supabase
+    const { data: rawTour, error: tourErr } = await supabase
       .from("tours")
       .select(
         [
@@ -250,6 +285,8 @@ export default function TourDetailPage() {
       return;
     }
 
+    const tourData = rawTour as unknown as TourRow;
+
     setTour({
       id: tourData.id,
       title: tourData.title ?? "",
@@ -257,21 +294,19 @@ export default function TourDetailPage() {
       is_published: !!tourData.is_published,
       intro_audio_url: tourData.intro_audio_url ?? null,
 
-      cover_image_url: (tourData as any).cover_image_url ?? null,
+      cover_image_url: tourData.cover_image_url ?? null,
 
-      highlights_image_url: (tourData as any).highlights_image_url ?? null,
-      map_image_url: (tourData as any).map_image_url ?? null,
-      start_image_url: (tourData as any).start_image_url ?? null,
+      highlights_image_url: tourData.highlights_image_url ?? null,
+      map_image_url: tourData.map_image_url ?? null,
+      start_image_url: tourData.start_image_url ?? null,
 
-      start_touring_color_hex: (tourData as any).start_touring_color_hex ?? null,
-      highlights_button_color_hex:
-        (tourData as any).highlights_button_color_hex ?? null,
-      map_button_color_hex: (tourData as any).map_button_color_hex ?? null,
-      where_starts_button_color_hex:
-        (tourData as any).where_starts_button_color_hex ?? null,
+      start_touring_color_hex: tourData.start_touring_color_hex ?? null,
+      highlights_button_color_hex: tourData.highlights_button_color_hex ?? null,
+      map_button_color_hex: tourData.map_button_color_hex ?? null,
+      where_starts_button_color_hex: tourData.where_starts_button_color_hex ?? null,
 
       category_id: tourData.category_id ?? null,
-      categories: (tourData as any).categories ?? null,
+      categories: tourData.categories ?? null,
     });
 
     setTitle(tourData.title ?? "");
@@ -280,12 +315,10 @@ export default function TourDetailPage() {
     setCategoryId(tourData.category_id ?? "");
 
     // ✅ load color values into inputs
-    setStartTouringColorHex((tourData as any).start_touring_color_hex ?? "");
-    setHighlightsColorHex((tourData as any).highlights_button_color_hex ?? "");
-    setMapColorHex((tourData as any).map_button_color_hex ?? "");
-    setWhereStartsColorHex(
-      (tourData as any).where_starts_button_color_hex ?? ""
-    );
+    setStartTouringColorHex(tourData.start_touring_color_hex ?? "");
+    setHighlightsColorHex(tourData.highlights_button_color_hex ?? "");
+    setMapColorHex(tourData.map_button_color_hex ?? "");
+    setWhereStartsColorHex(tourData.where_starts_button_color_hex ?? "");
 
     const { data: stopsData, error: stopsErr } = await supabase
       .from("stops")
@@ -300,7 +333,13 @@ export default function TourDetailPage() {
       setStops([]);
     } else {
       setStops(
-        (stopsData ?? []).map((s: any) => ({ ...s, pass_by: !!s.pass_by }))
+        (stopsData ?? []).map((s: any) => ({
+          ...s,
+          pass_by: !!s.pass_by,
+          // ✅ keep whatever comes back, but UI always treats as pasteable strings
+          lat: s.lat ?? "",
+          lng: s.lng ?? "",
+        }))
       );
     }
 
@@ -388,7 +427,7 @@ export default function TourDetailPage() {
       return;
     }
 
-    // ✅ allow paste-anything; no Number() / no finite checks
+    // ✅ allow paste-anything; no Number() coercion / no finite checks
     const lat = newStop.lat;
     const lng = newStop.lng;
     const radius = Number(newStop.radius_m);
@@ -442,7 +481,7 @@ export default function TourDetailPage() {
     setStopSaving(stopId, true);
 
     try {
-      // ✅ allow paste-anything; no Number() / no finite checks
+      // ✅ allow paste-anything; no finite checks on lat/lng
       const payload: any = {
         title: stop.title?.trim(),
         lat: stop.lat,
@@ -455,11 +494,7 @@ export default function TourDetailPage() {
       if (!payload.title) throw new Error("Stop title is required.");
       if (!Number.isFinite(payload.radius_m)) payload.radius_m = 75;
 
-      const { error } = await supabase
-        .from("stops")
-        .update(payload)
-        .eq("id", stopId);
-
+      const { error } = await supabase.from("stops").update(payload).eq("id", stopId);
       if (error) throw error;
 
       // Mark as clean
@@ -1368,6 +1403,7 @@ export default function TourDetailPage() {
               {newStop.image_url ? (
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-gray-700">Uploaded ✓</span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={newStop.image_url}
                     alt="New stop"
@@ -1576,9 +1612,7 @@ export default function TourDetailPage() {
                         disabled={uploadingStopId === s.id}
                         onClick={() => stopFileRefs.current[s.id]?.click()}
                       >
-                        {uploadingStopId === s.id
-                          ? "Uploading…"
-                          : "Upload file"}
+                        {uploadingStopId === s.id ? "Uploading…" : "Upload file"}
                       </button>
 
                       {s.audio_url ? (
@@ -1600,9 +1634,7 @@ export default function TourDetailPage() {
                               handleDeleteStopAudio(s.id, s.audio_url!)
                             }
                           >
-                            {deletingStopAudioId === s.id
-                              ? "Deleting…"
-                              : "Delete"}
+                            {deletingStopAudioId === s.id ? "Deleting…" : "Delete"}
                           </button>
                         </div>
                       ) : (
@@ -1647,6 +1679,7 @@ export default function TourDetailPage() {
                     {s.image_url ? (
                       <div className="flex items-center gap-3">
                         <span className="text-sm text-gray-700">Uploaded ✓</span>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={s.image_url}
                           alt={s.title}
@@ -1669,9 +1702,7 @@ export default function TourDetailPage() {
                             handleDeleteStopImage(s.id, s.image_url!)
                           }
                         >
-                          {deletingStopImageId === s.id
-                            ? "Deleting…"
-                            : "Delete"}
+                          {deletingStopImageId === s.id ? "Deleting…" : "Delete"}
                         </button>
                       </div>
                     ) : (
