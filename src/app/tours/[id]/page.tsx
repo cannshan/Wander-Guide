@@ -12,14 +12,14 @@ import { deleteStopAudio } from "@/lib/deleteStopAudio";
 import { uploadTourImage } from "@/lib/uploadTourImage";
 import { deleteTourImage } from "@/lib/deleteTourImage";
 
-// ✅ NEW: per-button image helpers (you must add these two lib files)
+// ✅ per-button image helpers
 import {
   uploadTourButtonImage,
   type TourButtonImageKey,
 } from "@/lib/uploadTourButtonImage";
 import { deleteTourButtonImage } from "@/lib/deleteTourButtonImage";
 
-// ✅ NEW: intro audio delete helper
+// ✅ intro audio delete helper
 import { deleteTourIntroAudio } from "@/lib/deleteTourIntroAudio";
 
 type Category = {
@@ -37,10 +37,16 @@ type Tour = {
   // ✅ Tour cover image
   cover_image_url: string | null;
 
-  // ✅ NEW: per-button images
+  // ✅ per-button images
   highlights_image_url: string | null;
   map_image_url: string | null;
   start_image_url: string | null;
+
+  // ✅ per-button colors (hex)
+  start_touring_color_hex: string | null;
+  highlights_button_color_hex: string | null;
+  map_button_color_hex: string | null;
+  where_starts_button_color_hex: string | null;
 
   // ✅ Category support
   category_id: string | null;
@@ -51,8 +57,9 @@ type Stop = {
   id: string;
   tour_id: string;
   title: string;
-  lat: number;
-  lng: number;
+  // ✅ allow paste-anything behavior in UI
+  lat: string | number;
+  lng: string | number;
   radius_m: number;
   pass_by: boolean;
   audio_url: string | null;
@@ -70,6 +77,27 @@ const blankStop = {
   image_url: "",
 };
 
+/* ============================
+   ✅ Color helpers (wheel + hex)
+============================ */
+
+function isHex6(v: string) {
+  return /^#?[0-9a-fA-F]{6}$/.test(v.trim());
+}
+
+function normalizeHex6(v: string): string | "" {
+  const t = v.trim();
+  if (!t) return "";
+  if (!isHex6(t)) return "";
+  return t.startsWith("#") ? t.toUpperCase() : `#${t.toUpperCase()}`;
+}
+
+/** input[type="color"] must receive a valid #RRGGBB, so we guarantee fallback */
+function safeColorForPicker(v: string | null | undefined, fallback: string) {
+  const n = normalizeHex6(v ?? "");
+  return n || fallback;
+}
+
 export default function TourDetailPage() {
   const params = useParams<{ id: string }>();
   const tourId = useMemo(() => params?.id as string, [params]);
@@ -83,6 +111,12 @@ export default function TourDetailPage() {
   const [title, setTitle] = useState("");
   const [city, setCity] = useState("");
   const [isPublished, setIsPublished] = useState(true);
+
+  // ✅ color fields state
+  const [startTouringColorHex, setStartTouringColorHex] = useState<string>("");
+  const [highlightsColorHex, setHighlightsColorHex] = useState<string>("");
+  const [mapColorHex, setMapColorHex] = useState<string>("");
+  const [whereStartsColorHex, setWhereStartsColorHex] = useState<string>("");
 
   // Category form state
   const [categoryId, setCategoryId] = useState<string>("");
@@ -105,7 +139,7 @@ export default function TourDetailPage() {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [deletingCover, setDeletingCover] = useState(false);
 
-  // ✅ NEW: per-button image upload/delete state
+  // per-button image upload/delete state
   const [uploadingButtonKey, setUploadingButtonKey] =
     useState<TourButtonImageKey | null>(null);
   const [deletingButtonKey, setDeletingButtonKey] =
@@ -125,10 +159,10 @@ export default function TourDetailPage() {
     string | null
   >(null);
 
-  // ✅ NEW: intro audio delete state
+  // intro audio delete state
   const [deletingIntro, setDeletingIntro] = useState(false);
 
-  // ✅ NEW: Stop dirty tracking + per-stop save state
+  // Stop dirty tracking + per-stop save state
   const [dirtyStops, setDirtyStops] = useState<Set<string>>(new Set());
   const [savingStopIds, setSavingStopIds] = useState<Set<string>>(new Set());
 
@@ -157,7 +191,7 @@ export default function TourDetailPage() {
   // Tour cover file input
   const coverFileRef = useRef<HTMLInputElement | null>(null);
 
-  // ✅ NEW: per-button file inputs
+  // per-button file inputs
   const highlightsFileRef = useRef<HTMLInputElement | null>(null);
   const mapFileRef = useRef<HTMLInputElement | null>(null);
   const startFileRef = useRef<HTMLInputElement | null>(null);
@@ -188,7 +222,24 @@ export default function TourDetailPage() {
     const { data: tourData, error: tourErr } = await supabase
       .from("tours")
       .select(
-        "id,title,city,is_published,intro_audio_url,cover_image_url,highlights_image_url,map_image_url,start_image_url,category_id,categories(name)"
+        [
+          "id",
+          "title",
+          "city",
+          "is_published",
+          "intro_audio_url",
+          "cover_image_url",
+          "highlights_image_url",
+          "map_image_url",
+          "start_image_url",
+          // ✅ color fields
+          "start_touring_color_hex",
+          "highlights_button_color_hex",
+          "map_button_color_hex",
+          "where_starts_button_color_hex",
+          "category_id",
+          "categories(name)",
+        ].join(",")
       )
       .eq("id", tourId)
       .single();
@@ -208,10 +259,16 @@ export default function TourDetailPage() {
 
       cover_image_url: (tourData as any).cover_image_url ?? null,
 
-      // ✅ NEW
       highlights_image_url: (tourData as any).highlights_image_url ?? null,
       map_image_url: (tourData as any).map_image_url ?? null,
       start_image_url: (tourData as any).start_image_url ?? null,
+
+      start_touring_color_hex: (tourData as any).start_touring_color_hex ?? null,
+      highlights_button_color_hex:
+        (tourData as any).highlights_button_color_hex ?? null,
+      map_button_color_hex: (tourData as any).map_button_color_hex ?? null,
+      where_starts_button_color_hex:
+        (tourData as any).where_starts_button_color_hex ?? null,
 
       category_id: tourData.category_id ?? null,
       categories: (tourData as any).categories ?? null,
@@ -221,6 +278,14 @@ export default function TourDetailPage() {
     setCity(tourData.city ?? "");
     setIsPublished(!!tourData.is_published);
     setCategoryId(tourData.category_id ?? "");
+
+    // ✅ load color values into inputs
+    setStartTouringColorHex((tourData as any).start_touring_color_hex ?? "");
+    setHighlightsColorHex((tourData as any).highlights_button_color_hex ?? "");
+    setMapColorHex((tourData as any).map_button_color_hex ?? "");
+    setWhereStartsColorHex(
+      (tourData as any).where_starts_button_color_hex ?? ""
+    );
 
     const { data: stopsData, error: stopsErr } = await supabase
       .from("stops")
@@ -239,7 +304,7 @@ export default function TourDetailPage() {
       );
     }
 
-    // ✅ Clear dirty state after a fresh load
+    // Clear dirty state after a fresh load
     setDirtyStops(new Set());
     setSavingStopIds(new Set());
 
@@ -262,6 +327,12 @@ export default function TourDetailPage() {
       return;
     }
 
+    // normalize hex strings (empty => null)
+    const startTouringHex = normalizeHex6(startTouringColorHex) || null;
+    const highlightsHex = normalizeHex6(highlightsColorHex) || null;
+    const mapHex = normalizeHex6(mapColorHex) || null;
+    const whereStartsHex = normalizeHex6(whereStartsColorHex) || null;
+
     const { error } = await supabase
       .from("tours")
       .update({
@@ -269,6 +340,13 @@ export default function TourDetailPage() {
         city: city.trim() || null,
         is_published: isPublished,
         category_id: categoryId ? categoryId : null,
+
+        // ✅ save colors
+        start_touring_color_hex: startTouringHex,
+        highlights_button_color_hex: highlightsHex,
+        map_button_color_hex: mapHex,
+        where_starts_button_color_hex: whereStartsHex,
+
         updated_at: new Date().toISOString(),
       })
       .eq("id", tourId);
@@ -310,15 +388,10 @@ export default function TourDetailPage() {
       return;
     }
 
-    const lat = Number(newStop.lat);
-    const lng = Number(newStop.lng);
+    // ✅ allow paste-anything; no Number() / no finite checks
+    const lat = newStop.lat;
+    const lng = newStop.lng;
     const radius = Number(newStop.radius_m);
-
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      setError("Lat/Lng must be valid numbers.");
-      setSavingStop(false);
-      return;
-    }
 
     const nextSort =
       stops.length === 0 ? 0 : Math.max(...stops.map((s) => s.sort_order)) + 1;
@@ -348,7 +421,7 @@ export default function TourDetailPage() {
   };
 
   /* ============================
-     ✅ NEW: Stop Edit (LOCAL ONLY) + Save button per stop
+     Stop Edit (LOCAL ONLY) + Save button per stop
   ============================ */
 
   const updateStopLocal = (
@@ -369,19 +442,17 @@ export default function TourDetailPage() {
     setStopSaving(stopId, true);
 
     try {
-      const payload = {
+      // ✅ allow paste-anything; no Number() / no finite checks
+      const payload: any = {
         title: stop.title?.trim(),
-        lat: Number(stop.lat),
-        lng: Number(stop.lng),
+        lat: stop.lat,
+        lng: stop.lng,
         radius_m: Number(stop.radius_m),
         pass_by: !!stop.pass_by,
         updated_at: new Date().toISOString(),
       };
 
       if (!payload.title) throw new Error("Stop title is required.");
-      if (!Number.isFinite(payload.lat) || !Number.isFinite(payload.lng)) {
-        throw new Error("Lat/Lng must be valid numbers.");
-      }
       if (!Number.isFinite(payload.radius_m)) payload.radius_m = 75;
 
       const { error } = await supabase
@@ -443,7 +514,7 @@ export default function TourDetailPage() {
   };
 
   /* ============================
-     ✅ NEW: Tour Button Images (Highlights / Map / Start) Upload + Delete
+     Tour Button Images (Highlights / Map / Start) Upload + Delete
   ============================ */
 
   const uploadButtonImage = async (key: TourButtonImageKey, file: File) => {
@@ -557,7 +628,7 @@ export default function TourDetailPage() {
   };
 
   /* ============================
-     ✅ NEW: Intro Audio Delete Handler
+     Intro Audio Delete Handler
   ============================ */
 
   const handleDeleteIntroAudio = async () => {
@@ -760,6 +831,12 @@ export default function TourDetailPage() {
     },
   ];
 
+  // picker fallbacks (so the wheel always renders)
+  const FALLBACK_START_TOURING = "#111111";
+  const FALLBACK_HIGHLIGHTS = "#111111";
+  const FALLBACK_MAP = "#111111";
+  const FALLBACK_WHERE_STARTS = "#111111";
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-8">
       <div className="flex items-center justify-between gap-3">
@@ -836,6 +913,154 @@ export default function TourDetailPage() {
           Published (visible to public app)
         </label>
 
+        {/* Button Colors (wheel + hex) */}
+        <div className="border rounded-lg p-3 space-y-3">
+          <div className="text-sm font-medium">
+            Button Colors (Color wheel + Hex)
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Start Touring */}
+            <div className="border rounded-lg p-3 space-y-2">
+              <div className="text-sm font-medium">
+                Start Touring button color
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  className="h-9 w-12 cursor-pointer rounded border"
+                  value={safeColorForPicker(
+                    startTouringColorHex,
+                    FALLBACK_START_TOURING
+                  )}
+                  onChange={(e) => setStartTouringColorHex(e.target.value)}
+                  aria-label="Start Touring color picker"
+                />
+                <input
+                  type="text"
+                  className="border rounded-lg px-2 py-1 text-sm w-32 font-mono"
+                  placeholder="#RRGGBB"
+                  value={startTouringColorHex}
+                  onChange={(e) => setStartTouringColorHex(e.target.value)}
+                  onBlur={() =>
+                    setStartTouringColorHex(normalizeHex6(startTouringColorHex))
+                  }
+                />
+                <button
+                  type="button"
+                  className="border px-2 py-1 rounded-lg text-xs"
+                  onClick={() => setStartTouringColorHex("")}
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="text-[11px] text-gray-500">
+                Tip: paste your brand hex, e.g.{" "}
+                <span className="font-mono">#FF785A</span>
+              </div>
+            </div>
+
+            {/* Highlights */}
+            <div className="border rounded-lg p-3 space-y-2">
+              <div className="text-sm font-medium">Highlights button color</div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  className="h-9 w-12 cursor-pointer rounded border"
+                  value={safeColorForPicker(
+                    highlightsColorHex,
+                    FALLBACK_HIGHLIGHTS
+                  )}
+                  onChange={(e) => setHighlightsColorHex(e.target.value)}
+                  aria-label="Highlights color picker"
+                />
+                <input
+                  type="text"
+                  className="border rounded-lg px-2 py-1 text-sm w-32 font-mono"
+                  placeholder="#RRGGBB"
+                  value={highlightsColorHex}
+                  onChange={(e) => setHighlightsColorHex(e.target.value)}
+                  onBlur={() =>
+                    setHighlightsColorHex(normalizeHex6(highlightsColorHex))
+                  }
+                />
+                <button
+                  type="button"
+                  className="border px-2 py-1 rounded-lg text-xs"
+                  onClick={() => setHighlightsColorHex("")}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            {/* Map */}
+            <div className="border rounded-lg p-3 space-y-2">
+              <div className="text-sm font-medium">Map button color</div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  className="h-9 w-12 cursor-pointer rounded border"
+                  value={safeColorForPicker(mapColorHex, FALLBACK_MAP)}
+                  onChange={(e) => setMapColorHex(e.target.value)}
+                  aria-label="Map color picker"
+                />
+                <input
+                  type="text"
+                  className="border rounded-lg px-2 py-1 text-sm w-32 font-mono"
+                  placeholder="#RRGGBB"
+                  value={mapColorHex}
+                  onChange={(e) => setMapColorHex(e.target.value)}
+                  onBlur={() => setMapColorHex(normalizeHex6(mapColorHex))}
+                />
+                <button
+                  type="button"
+                  className="border px-2 py-1 rounded-lg text-xs"
+                  onClick={() => setMapColorHex("")}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            {/* Where tour starts */}
+            <div className="border rounded-lg p-3 space-y-2">
+              <div className="text-sm font-medium">
+                Where the tour starts button color
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  className="h-9 w-12 cursor-pointer rounded border"
+                  value={safeColorForPicker(
+                    whereStartsColorHex,
+                    FALLBACK_WHERE_STARTS
+                  )}
+                  onChange={(e) => setWhereStartsColorHex(e.target.value)}
+                  aria-label="Where starts color picker"
+                />
+                <input
+                  type="text"
+                  className="border rounded-lg px-2 py-1 text-sm w-32 font-mono"
+                  placeholder="#RRGGBB"
+                  value={whereStartsColorHex}
+                  onChange={(e) => setWhereStartsColorHex(e.target.value)}
+                  onBlur={() =>
+                    setWhereStartsColorHex(normalizeHex6(whereStartsColorHex))
+                  }
+                />
+                <button
+                  type="button"
+                  className="border px-2 py-1 rounded-lg text-xs"
+                  onClick={() => setWhereStartsColorHex("")}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Tour Cover Image */}
         <div className="border rounded-lg p-3 space-y-2">
           <div className="text-sm font-medium">Tour Cover Image</div>
@@ -908,7 +1133,7 @@ export default function TourDetailPage() {
           )}
         </div>
 
-        {/* ✅ NEW: Button Images */}
+        {/* Button Images */}
         <div className="border rounded-lg p-3 space-y-3">
           <div className="text-sm font-medium">
             Button Images (Highlights / Map / Where Tour Starts)
@@ -1291,7 +1516,7 @@ export default function TourDetailPage() {
                       className="border rounded-lg p-1 w-full"
                       value={String(s.lat)}
                       onChange={(e) =>
-                        updateStopLocal(s.id, { lat: Number(e.target.value) })
+                        updateStopLocal(s.id, { lat: e.target.value })
                       }
                     />
                   </div>
@@ -1304,7 +1529,7 @@ export default function TourDetailPage() {
                       className="border rounded-lg p-1 w-full"
                       value={String(s.lng)}
                       onChange={(e) =>
-                        updateStopLocal(s.id, { lng: Number(e.target.value) })
+                        updateStopLocal(s.id, { lng: e.target.value })
                       }
                     />
                   </div>
@@ -1326,7 +1551,9 @@ export default function TourDetailPage() {
 
                   {/* Audio */}
                   <div className="md:col-span-2 space-y-2">
-                    <div className="text-xs font-medium text-gray-700">Audio</div>
+                    <div className="text-xs font-medium text-gray-700">
+                      Audio
+                    </div>
 
                     <input
                       ref={(el) => {
@@ -1349,7 +1576,9 @@ export default function TourDetailPage() {
                         disabled={uploadingStopId === s.id}
                         onClick={() => stopFileRefs.current[s.id]?.click()}
                       >
-                        {uploadingStopId === s.id ? "Uploading…" : "Upload file"}
+                        {uploadingStopId === s.id
+                          ? "Uploading…"
+                          : "Upload file"}
                       </button>
 
                       {s.audio_url ? (
@@ -1371,7 +1600,9 @@ export default function TourDetailPage() {
                               handleDeleteStopAudio(s.id, s.audio_url!)
                             }
                           >
-                            {deletingStopAudioId === s.id ? "Deleting…" : "Delete"}
+                            {deletingStopAudioId === s.id
+                              ? "Deleting…"
+                              : "Delete"}
                           </button>
                         </div>
                       ) : (
@@ -1438,7 +1669,9 @@ export default function TourDetailPage() {
                             handleDeleteStopImage(s.id, s.image_url!)
                           }
                         >
-                          {deletingStopImageId === s.id ? "Deleting…" : "Delete"}
+                          {deletingStopImageId === s.id
+                            ? "Deleting…"
+                            : "Delete"}
                         </button>
                       </div>
                     ) : (
@@ -1451,7 +1684,8 @@ export default function TourDetailPage() {
 
                 {dirtyStops.has(s.id) && (
                   <div className="text-xs text-gray-500">
-                    Unsaved changes — click <span className="font-medium">Save</span>.
+                    Unsaved changes — click{" "}
+                    <span className="font-medium">Save</span>.
                   </div>
                 )}
               </div>
@@ -1459,8 +1693,6 @@ export default function TourDetailPage() {
           </div>
         )}
       </div>
-
-    
     </div>
   );
 }
