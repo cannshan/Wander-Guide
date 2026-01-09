@@ -1460,10 +1460,7 @@ export default function TourDetailPage() {
         )}
       </div>
 
-      <div className="text-xs text-gray-500">
-        Tip: deletions remove the Storage file (best effort) and clear the
-        database URL.
-      </div>
+    
     </div>
   );
 }
