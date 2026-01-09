@@ -19,6 +19,9 @@ import {
 } from "@/lib/uploadTourButtonImage";
 import { deleteTourButtonImage } from "@/lib/deleteTourButtonImage";
 
+// ✅ NEW: intro audio delete helper
+import { deleteTourIntroAudio } from "@/lib/deleteTourIntroAudio";
+
 type Category = {
   id: string;
   name: string;
@@ -109,18 +112,21 @@ export default function TourDetailPage() {
     useState<TourButtonImageKey | null>(null);
 
   // Stop image upload state
-  const [uploadingStopImageId, setUploadingStopImageId] = useState<string | null>(
-    null
-  );
+  const [uploadingStopImageId, setUploadingStopImageId] = useState<
+    string | null
+  >(null);
   const [uploadingNewStopImage, setUploadingNewStopImage] = useState(false);
 
   // Delete states
-  const [deletingStopImageId, setDeletingStopImageId] = useState<string | null>(
-    null
-  );
-  const [deletingStopAudioId, setDeletingStopAudioId] = useState<string | null>(
-    null
-  );
+  const [deletingStopImageId, setDeletingStopImageId] = useState<
+    string | null
+  >(null);
+  const [deletingStopAudioId, setDeletingStopAudioId] = useState<
+    string | null
+  >(null);
+
+  // ✅ NEW: intro audio delete state
+  const [deletingIntro, setDeletingIntro] = useState(false);
 
   // Hidden file inputs
   const introFileRef = useRef<HTMLInputElement | null>(null);
@@ -325,10 +331,14 @@ export default function TourDetailPage() {
     const payload: any = { ...patch, updated_at: new Date().toISOString() };
     if (payload.lat !== undefined) payload.lat = Number(payload.lat);
     if (payload.lng !== undefined) payload.lng = Number(payload.lng);
-    if (payload.radius_m !== undefined) payload.radius_m = Number(payload.radius_m);
+    if (payload.radius_m !== undefined)
+      payload.radius_m = Number(payload.radius_m);
     if (payload.pass_by !== undefined) payload.pass_by = !!payload.pass_by;
 
-    const { error } = await supabase.from("stops").update(payload).eq("id", stopId);
+    const { error } = await supabase
+      .from("stops")
+      .update(payload)
+      .eq("id", stopId);
 
     if (error) {
       setError(error.message);
@@ -487,6 +497,29 @@ export default function TourDetailPage() {
       setError(e?.message ?? "Failed to upload new stop audio.");
     } finally {
       setUploadingNewStop(false);
+    }
+  };
+
+  /* ============================
+     ✅ NEW: Intro Audio Delete Handler
+  ============================ */
+
+  const handleDeleteIntroAudio = async () => {
+    if (!tour?.intro_audio_url) return;
+
+    const ok = confirm("Delete intro audio?");
+    if (!ok) return;
+
+    setError(null);
+    setDeletingIntro(true);
+
+    try {
+      await deleteTourIntroAudio(tour.id, tour.intro_audio_url);
+      setTour((t) => (t ? { ...t, intro_audio_url: null } : t));
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to delete intro audio.");
+    } finally {
+      setDeletingIntro(false);
     }
   };
 
@@ -691,7 +724,9 @@ export default function TourDetailPage() {
         </div>
       </div>
 
-      {error && <div className="border rounded-xl p-3 text-red-600">{error}</div>}
+      {error && (
+        <div className="border rounded-xl p-3 text-red-600">{error}</div>
+      )}
 
       {/* Tour fields */}
       <div className="border rounded-xl p-4 space-y-3">
@@ -857,7 +892,9 @@ export default function TourDetailPage() {
                       disabled={uploadingButtonKey === b.key}
                       onClick={() => b.ref.current?.click()}
                     >
-                      {uploadingButtonKey === b.key ? "Uploading…" : "Replace image"}
+                      {uploadingButtonKey === b.key
+                        ? "Uploading…"
+                        : "Replace image"}
                     </button>
 
                     <a
@@ -913,7 +950,7 @@ export default function TourDetailPage() {
             }}
           />
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <button
               type="button"
               className="border px-4 py-2 rounded-lg"
@@ -924,14 +961,25 @@ export default function TourDetailPage() {
             </button>
 
             {tour.intro_audio_url ? (
-              <a
-                className="text-sm underline"
-                href={tour.intro_audio_url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Preview
-              </a>
+              <>
+                <a
+                  className="text-sm underline"
+                  href={tour.intro_audio_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Preview
+                </a>
+
+                <button
+                  type="button"
+                  className="border px-2 py-1 rounded-lg text-red-600 text-xs"
+                  disabled={deletingIntro}
+                  onClick={handleDeleteIntroAudio}
+                >
+                  {deletingIntro ? "Deleting…" : "Delete"}
+                </button>
+              </>
             ) : (
               <span className="text-sm text-gray-500">No file uploaded</span>
             )}
@@ -1065,7 +1113,9 @@ export default function TourDetailPage() {
               className="border rounded-lg p-2 w-full"
               placeholder="44.3876"
               value={String(newStop.lat)}
-              onChange={(e) => setNewStop((s) => ({ ...s, lat: e.target.value }))}
+              onChange={(e) =>
+                setNewStop((s) => ({ ...s, lat: e.target.value }))
+              }
             />
           </div>
 
@@ -1075,7 +1125,9 @@ export default function TourDetailPage() {
               className="border rounded-lg p-2 w-full"
               placeholder="-68.2043"
               value={String(newStop.lng)}
-              onChange={(e) => setNewStop((s) => ({ ...s, lng: e.target.value }))}
+              onChange={(e) =>
+                setNewStop((s) => ({ ...s, lng: e.target.value }))
+              }
             />
           </div>
 
@@ -1163,7 +1215,9 @@ export default function TourDetailPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-sm">
                   <div>
-                    <div className="text-xs font-medium text-gray-700">Latitude</div>
+                    <div className="text-xs font-medium text-gray-700">
+                      Latitude
+                    </div>
                     <input
                       className="border rounded-lg p-1 w-full"
                       defaultValue={String(s.lat)}
@@ -1194,7 +1248,9 @@ export default function TourDetailPage() {
                       className="border rounded-lg p-1 w-full"
                       defaultValue={String(s.radius_m)}
                       onBlur={(e) =>
-                        updateStopField(s.id, { radius_m: Number(e.target.value) })
+                        updateStopField(s.id, {
+                          radius_m: Number(e.target.value),
+                        })
                       }
                     />
                   </div>
@@ -1283,7 +1339,9 @@ export default function TourDetailPage() {
                       disabled={uploadingStopImageId === s.id}
                       onClick={() => stopImageRefs.current[s.id]?.click()}
                     >
-                      {uploadingStopImageId === s.id ? "Uploading…" : "Upload image"}
+                      {uploadingStopImageId === s.id
+                        ? "Uploading…"
+                        : "Upload image"}
                     </button>
 
                     {s.image_url ? (
@@ -1328,7 +1386,8 @@ export default function TourDetailPage() {
       </div>
 
       <div className="text-xs text-gray-500">
-        Tip: deletions remove the Storage file (best effort) and clear the database URL.
+        Tip: deletions remove the Storage file (best effort) and clear the
+        database URL.
       </div>
     </div>
   );
