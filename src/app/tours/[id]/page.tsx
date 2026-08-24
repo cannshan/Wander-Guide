@@ -200,6 +200,7 @@ export default function TourDetailPage() {
   // Stop dirty tracking + per-stop save state
   const [dirtyStops, setDirtyStops] = useState<Set<string>>(new Set());
   const [savingStopIds, setSavingStopIds] = useState<Set<string>>(new Set());
+  const [stopErrors, setStopErrors] = useState<Record<string, string>>({});
 
   function markStopDirty(stopId: string) {
     setDirtyStops((prev) => {
@@ -478,14 +479,37 @@ export default function TourDetailPage() {
     if (!stop) return;
 
     setError(null);
+    setStopErrors((prev) => {
+      const next = { ...prev };
+      delete next[stopId];
+      return next;
+    });
     setStopSaving(stopId, true);
 
     try {
-      // ✅ allow paste-anything; no finite checks on lat/lng
+      // ✅ trim + validate lat/lng so a stray space, degree symbol, or
+      // pasted "lat, lng" string doesn't silently fail the numeric cast
+      const latStr = String(stop.lat).trim();
+      const lngStr = String(stop.lng).trim();
+      const lat = Number(latStr);
+      const lng = Number(lngStr);
+
+      if (latStr === "" || lngStr === "" || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+        throw new Error(
+          "Latitude/Longitude must be plain numbers (e.g. 44.008, -71.272) — no letters, degree symbols, or commas."
+        );
+      }
+      if (lat < -90 || lat > 90) {
+        throw new Error("Latitude must be between -90 and 90.");
+      }
+      if (lng < -180 || lng > 180) {
+        throw new Error("Longitude must be between -180 and 180.");
+      }
+
       const payload: any = {
         title: stop.title?.trim(),
-        lat: stop.lat,
-        lng: stop.lng,
+        lat,
+        lng,
         radius_m: Number(stop.radius_m),
         pass_by: !!stop.pass_by,
         updated_at: new Date().toISOString(),
@@ -494,8 +518,23 @@ export default function TourDetailPage() {
       if (!payload.title) throw new Error("Stop title is required.");
       if (!Number.isFinite(payload.radius_m)) payload.radius_m = 75;
 
-      const { error } = await supabase.from("stops").update(payload).eq("id", stopId);
+      const { error, data } = await supabase
+        .from("stops")
+        .update(payload)
+        .eq("id", stopId)
+        .select();
+
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error(
+          "Save didn't affect any rows — you may not have permission to edit this stop (check Supabase RLS policy on 'stops')."
+        );
+      }
+
+      // Reflect the normalized numeric values back into local state
+      setStops((prev) =>
+        prev.map((s) => (s.id === stopId ? { ...s, lat, lng } : s))
+      );
 
       // Mark as clean
       setDirtyStops((prev) => {
@@ -504,7 +543,8 @@ export default function TourDetailPage() {
         return next;
       });
     } catch (e: any) {
-      setError(e?.message ?? "Failed to save stop.");
+      const message = e?.message ?? "Failed to save stop.";
+      setStopErrors((prev) => ({ ...prev, [stopId]: message }));
     } finally {
       setStopSaving(stopId, false);
     }
@@ -1713,7 +1753,13 @@ export default function TourDetailPage() {
                   </div>
                 </div>
 
-                {dirtyStops.has(s.id) && (
+                {stopErrors[s.id] && (
+                  <div className="text-xs text-red-600 font-medium">
+                    {stopErrors[s.id]}
+                  </div>
+                )}
+
+                {!stopErrors[s.id] && dirtyStops.has(s.id) && (
                   <div className="text-xs text-gray-500">
                     Unsaved changes — click{" "}
                     <span className="font-medium">Save</span>.
